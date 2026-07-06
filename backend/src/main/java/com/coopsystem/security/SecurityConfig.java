@@ -2,6 +2,7 @@ package com.coopsystem.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -15,12 +16,22 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+
+                        // Health
+                        .requestMatchers("/api/v1/health").permitAll()
+
+                        // Associates
+                        .requestMatchers("/api/v1/associates/**").permitAll()
+
+                        // Users
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll()
+
+                        // Swagger
                         .requestMatchers(
-                                "/api/v1/health",
-                                "/api/v1/associates/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults());
