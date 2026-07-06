@@ -4,6 +4,7 @@ import com.coopsystem.modules.associate.dto.AssociateResponse;
 import com.coopsystem.modules.associate.dto.CreateAssociateRequest;
 import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
+import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,6 +23,12 @@ public class AssociateService {
     }
 
     public AssociateResponse create(CreateAssociateRequest request) {
+
+        if (associateRepository.existsByEmail(request.getEmail())) {
+            throw new BusinessException(
+                    "Ya existe un asociado con el correo: " + request.getEmail()
+            );
+        }
 
         Associate associate = new Associate();
 
