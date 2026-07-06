@@ -26,3 +26,7 @@ server:
 logging:
   level:
     org.springframework: INFO
+
+jwt:
+  secret: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVm
+  expiration: 86400000
