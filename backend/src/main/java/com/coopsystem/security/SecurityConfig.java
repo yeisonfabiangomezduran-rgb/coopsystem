@@ -26,6 +26,9 @@ public class SecurityConfig {
                         // Users
                         .requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll()
 
+                        // Auth
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+
                         // Swagger
                         .requestMatchers(
                                 "/swagger-ui/**",
