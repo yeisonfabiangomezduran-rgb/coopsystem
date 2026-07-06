@@ -2,6 +2,7 @@ package com.coopsystem.modules.associate.controller;
 
 import com.coopsystem.modules.associate.dto.AssociateResponse;
 import com.coopsystem.modules.associate.dto.CreateAssociateRequest;
+import com.coopsystem.modules.associate.dto.UpdateAssociateRequest;
 import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.service.AssociateService;
 import com.coopsystem.shared.response.ApiResponse;
@@ -62,6 +63,22 @@ public class AssociateController {
                 true,
                 "Asociado creado correctamente",
                 associateService.create(request)
+        );
+    }
+
+    @PutMapping("/{id}")
+    @Operation(
+            summary = "Actualizar asociado",
+            description = "Actualiza la información de un asociado."
+    )
+    public ApiResponse<AssociateResponse> update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateAssociateRequest request) {
+
+        return new ApiResponse<>(
+                true,
+                "Asociado actualizado correctamente",
+                associateService.update(id, request)
         );
     }
 }

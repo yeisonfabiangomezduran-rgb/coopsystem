@@ -2,6 +2,7 @@ package com.coopsystem.modules.associate.service;
 
 import com.coopsystem.modules.associate.dto.AssociateResponse;
 import com.coopsystem.modules.associate.dto.CreateAssociateRequest;
+import com.coopsystem.modules.associate.dto.UpdateAssociateRequest;
 import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.shared.exception.BusinessException;
@@ -59,6 +60,33 @@ public class AssociateService {
                 saved.getFirstName(),
                 saved.getLastName(),
                 saved.getEmail()
+        );
+    }
+
+    public AssociateResponse update(Long id, UpdateAssociateRequest request) {
+
+        Associate associate = associateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No existe un asociado con id: " + id
+                ));
+
+        if (associateRepository.existsByEmailAndIdNot(request.getEmail(), id)) {
+            throw new BusinessException(
+                    "Ya existe un asociado con el correo: " + request.getEmail()
+            );
+        }
+
+        associate.setFirstName(request.getFirstName());
+        associate.setLastName(request.getLastName());
+        associate.setEmail(request.getEmail());
+
+        Associate updated = associateRepository.save(associate);
+
+        return new AssociateResponse(
+                updated.getId(),
+                updated.getFirstName(),
+                updated.getLastName(),
+                updated.getEmail()
         );
     }
 }
