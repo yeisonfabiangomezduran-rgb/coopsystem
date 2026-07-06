@@ -81,4 +81,21 @@ public class AssociateController {
                 associateService.update(id, request)
         );
     }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Eliminar asociado",
+            description = "Elimina un asociado por su identificador."
+    )
+    public ApiResponse<Void> delete(
+            @PathVariable Long id) {
+
+        associateService.delete(id);
+
+        return new ApiResponse<>(
+                true,
+                "Asociado eliminado correctamente",
+                null
+        );
+    }
 }

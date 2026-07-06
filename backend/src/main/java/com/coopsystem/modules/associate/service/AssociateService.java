@@ -89,4 +89,14 @@ public class AssociateService {
                 updated.getEmail()
         );
     }
+
+    public void delete(Long id) {
+
+        Associate associate = associateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No existe un asociado con id: " + id
+                ));
+
+        associateRepository.delete(associate);
+    }
 }
