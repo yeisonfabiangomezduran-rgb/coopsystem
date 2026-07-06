@@ -35,6 +35,21 @@ public class AssociateController {
         );
     }
 
+    @GetMapping("/{id}")
+    @Operation(
+            summary = "Buscar asociado por ID",
+            description = "Obtiene un asociado por su identificador."
+    )
+    public ApiResponse<AssociateResponse> findById(
+            @PathVariable Long id) {
+
+        return new ApiResponse<>(
+                true,
+                "Asociado encontrado",
+                associateService.findById(id)
+        );
+    }
+
     @PostMapping
     @Operation(
             summary = "Crear asociado",

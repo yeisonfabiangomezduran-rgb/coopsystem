@@ -5,6 +5,7 @@ import com.coopsystem.modules.associate.dto.CreateAssociateRequest;
 import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.shared.exception.BusinessException;
+import com.coopsystem.shared.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,6 +21,21 @@ public class AssociateService {
 
     public List<Associate> findAll() {
         return associateRepository.findAll();
+    }
+
+    public AssociateResponse findById(Long id) {
+
+        Associate associate = associateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No existe un asociado con id: " + id
+                ));
+
+        return new AssociateResponse(
+                associate.getId(),
+                associate.getFirstName(),
+                associate.getLastName(),
+                associate.getEmail()
+        );
     }
 
     public AssociateResponse create(CreateAssociateRequest request) {
