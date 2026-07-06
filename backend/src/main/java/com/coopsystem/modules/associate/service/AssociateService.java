@@ -20,8 +20,12 @@ public class AssociateService {
         this.associateRepository = associateRepository;
     }
 
-    public List<Associate> findAll() {
-        return associateRepository.findAll();
+    public List<AssociateResponse> findAll() {
+
+        return associateRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     public AssociateResponse findById(Long id) {
@@ -31,12 +35,7 @@ public class AssociateService {
                         "No existe un asociado con id: " + id
                 ));
 
-        return new AssociateResponse(
-                associate.getId(),
-                associate.getFirstName(),
-                associate.getLastName(),
-                associate.getEmail()
-        );
+        return toResponse(associate);
     }
 
     public AssociateResponse create(CreateAssociateRequest request) {
@@ -55,12 +54,7 @@ public class AssociateService {
 
         Associate saved = associateRepository.save(associate);
 
-        return new AssociateResponse(
-                saved.getId(),
-                saved.getFirstName(),
-                saved.getLastName(),
-                saved.getEmail()
-        );
+        return toResponse(saved);
     }
 
     public AssociateResponse update(Long id, UpdateAssociateRequest request) {
@@ -82,12 +76,7 @@ public class AssociateService {
 
         Associate updated = associateRepository.save(associate);
 
-        return new AssociateResponse(
-                updated.getId(),
-                updated.getFirstName(),
-                updated.getLastName(),
-                updated.getEmail()
-        );
+        return toResponse(updated);
     }
 
     public void delete(Long id) {
@@ -98,5 +87,15 @@ public class AssociateService {
                 ));
 
         associateRepository.delete(associate);
+    }
+
+    private AssociateResponse toResponse(Associate associate) {
+
+        return new AssociateResponse(
+                associate.getId(),
+                associate.getFirstName(),
+                associate.getLastName(),
+                associate.getEmail()
+        );
     }
 }

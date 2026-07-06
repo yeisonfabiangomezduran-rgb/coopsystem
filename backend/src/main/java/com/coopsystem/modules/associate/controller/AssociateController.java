@@ -3,7 +3,6 @@ package com.coopsystem.modules.associate.controller;
 import com.coopsystem.modules.associate.dto.AssociateResponse;
 import com.coopsystem.modules.associate.dto.CreateAssociateRequest;
 import com.coopsystem.modules.associate.dto.UpdateAssociateRequest;
-import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.service.AssociateService;
 import com.coopsystem.shared.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,7 +26,7 @@ public class AssociateController {
             summary = "Listar asociados",
             description = "Obtiene todos los asociados registrados."
     )
-    public ApiResponse<List<Associate>> findAll() {
+    public ApiResponse<List<AssociateResponse>> findAll() {
 
         return new ApiResponse<>(
                 true,
