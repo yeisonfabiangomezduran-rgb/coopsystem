@@ -1,5 +1,6 @@
 package com.coopsystem.modules.user.entity;
 
+import com.coopsystem.modules.role.entity.Role;
 import jakarta.persistence.*;
 
 @Entity
@@ -21,6 +22,10 @@ public class User {
 
     @Column(nullable = false)
     private Boolean enabled = true;
+
+    @ManyToOne
+    @JoinColumn(name = "role_id", nullable = false)
+    private Role role;
 
     public User() {
     }
@@ -63,5 +68,13 @@ public class User {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
     }
 }

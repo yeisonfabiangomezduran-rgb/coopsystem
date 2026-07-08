@@ -1,5 +1,7 @@
 package com.coopsystem.modules.user.service;
 
+import com.coopsystem.modules.role.entity.Role;
+import com.coopsystem.modules.role.repository.RoleRepository;
 import com.coopsystem.modules.user.dto.CreateUserRequest;
 import com.coopsystem.modules.user.dto.UserResponse;
 import com.coopsystem.modules.user.entity.User;
@@ -13,13 +15,16 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RoleRepository roleRepository;
 
     public UserService(
             UserRepository userRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            RoleRepository roleRepository) {
 
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.roleRepository = roleRepository;
     }
 
     public UserResponse create(CreateUserRequest request) {
@@ -36,12 +41,19 @@ public class UserService {
             );
         }
 
+        // Buscar el rol por defecto
+        Role role = roleRepository.findByName("ROLE_USER")
+                .orElseThrow(() ->
+                        new BusinessException("Rol ROLE_USER no encontrado")
+                );
+
         User user = new User();
 
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setEnabled(true);
+        user.setRole(role);
 
         User saved = userRepository.save(user);
 

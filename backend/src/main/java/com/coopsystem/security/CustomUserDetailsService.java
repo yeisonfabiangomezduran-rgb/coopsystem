@@ -34,7 +34,11 @@ public class CustomUserDetailsService implements UserDetailsService {
                 true,
                 true,
                 true,
-                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                List.of(
+                        new SimpleGrantedAuthority(
+                                user.getRole().getName()
+                        )
+                )
         );
     }
 }

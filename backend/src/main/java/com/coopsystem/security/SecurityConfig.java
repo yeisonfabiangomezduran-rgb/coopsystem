@@ -37,6 +37,10 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
+                        // ==========================
+                        // Públicos
+                        // ==========================
+
                         .requestMatchers("/api/v1/health").permitAll()
 
                         .requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll()
@@ -47,6 +51,26 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
+
+                        // ==========================
+                        // Associates
+                        // ==========================
+
+                        .requestMatchers(HttpMethod.GET, "/api/v1/associates/**")
+                        .hasAnyRole("ADMIN", "USER")
+
+                        .requestMatchers(HttpMethod.POST, "/api/v1/associates/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/associates/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/associates/**")
+                        .hasRole("ADMIN")
+
+                        // ==========================
+                        // Todo lo demás
+                        // ==========================
 
                         .anyRequest().authenticated()
                 )
