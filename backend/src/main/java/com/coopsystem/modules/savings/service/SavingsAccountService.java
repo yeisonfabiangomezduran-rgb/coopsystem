@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.coopsystem.modules.savings.dto.DepositRequest;
+import com.coopsystem.modules.savings.dto.DepositResponse;
 
 @Service
 public class SavingsAccountService {
@@ -73,6 +75,35 @@ public class SavingsAccountService {
 
         return toResponse(account);
    }
+
+    public DepositResponse deposit(
+        Long id,
+        DepositRequest request) {
+
+        SavingsAccount account = savingsAccountRepository.findById(id)
+            .orElseThrow(() ->
+                    new BusinessException("La cuenta de ahorro no existe"));
+
+    if (account.getStatus() != AccountStatus.ACTIVE) {
+          throw new BusinessException("La cuenta no está activa");
+        }
+
+    BigDecimal previousBalance = account.getBalance();
+
+    BigDecimal currentBalance =
+            previousBalance.add(request.getAmount());
+
+    account.setBalance(currentBalance);
+
+    savingsAccountRepository.save(account);
+
+        return new DepositResponse(
+            account.getAccountNumber(),
+            previousBalance,
+            request.getAmount(),
+            currentBalance
+     );
+}
 
     private String generateAccountNumber() {
 

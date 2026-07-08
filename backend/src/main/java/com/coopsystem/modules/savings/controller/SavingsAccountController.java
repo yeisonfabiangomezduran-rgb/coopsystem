@@ -7,6 +7,8 @@ import com.coopsystem.shared.response.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import com.coopsystem.modules.savings.dto.DepositRequest;
+import com.coopsystem.modules.savings.dto.DepositResponse;
 
 import java.util.List;
 
@@ -62,5 +64,16 @@ public class SavingsAccountController {
                 "Cuenta de ahorro creada correctamente",
                 response
         );
+    }
+
+    @PostMapping("/{id}/deposit")
+    public ApiResponse<DepositResponse> deposit(
+        @PathVariable Long id,
+        @Valid @RequestBody DepositRequest request) {
+
+        return ApiResponse.success(
+            "Consignación realizada correctamente",
+            savingsAccountService.deposit(id, request)
+      );
     }
 }
