@@ -31,6 +31,25 @@ public class SavingsAccountController {
         );
     }
 
+    @GetMapping("/{id}")
+    public ApiResponse<SavingsAccountResponse> findById(
+            @PathVariable Long id) {
+
+        return ApiResponse.success(
+                "Cuenta encontrada correctamente",
+                savingsAccountService.findById(id)
+        );
+    }
+    @GetMapping("/account/{accountNumber}")
+    public ApiResponse<SavingsAccountResponse> findByAccountNumber(
+        @PathVariable String accountNumber) {
+
+         return ApiResponse.success(
+            "Cuenta encontrada correctamente",
+            savingsAccountService.findByAccountNumber(accountNumber)
+      );
+  }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SavingsAccountResponse> create(

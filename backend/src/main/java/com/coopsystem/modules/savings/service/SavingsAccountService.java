@@ -36,6 +36,15 @@ public class SavingsAccountService {
                 .toList();
     }
 
+    public SavingsAccountResponse findById(Long id) {
+
+        SavingsAccount account = savingsAccountRepository.findById(id)
+                .orElseThrow(() ->
+                        new BusinessException("La cuenta de ahorro no existe"));
+
+        return toResponse(account);
+    }
+
     public SavingsAccountResponse create(CreateSavingsAccountRequest request) {
 
         Associate associate = associateRepository.findById(request.getAssociateId())
@@ -54,6 +63,16 @@ public class SavingsAccountService {
 
         return toResponse(saved);
     }
+
+    public SavingsAccountResponse findByAccountNumber(String accountNumber) {
+
+        SavingsAccount account = savingsAccountRepository
+            .findByAccountNumber(accountNumber)
+            .orElseThrow(() ->
+                    new BusinessException("La cuenta de ahorro no existe"));
+
+        return toResponse(account);
+   }
 
     private String generateAccountNumber() {
 
