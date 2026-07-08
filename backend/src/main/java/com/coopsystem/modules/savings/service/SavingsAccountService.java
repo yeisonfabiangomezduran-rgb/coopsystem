@@ -1,0 +1,76 @@
+package com.coopsystem.modules.savings.service;
+
+import com.coopsystem.modules.associate.entity.Associate;
+import com.coopsystem.modules.associate.repository.AssociateRepository;
+import com.coopsystem.modules.savings.dto.CreateSavingsAccountRequest;
+import com.coopsystem.modules.savings.dto.SavingsAccountResponse;
+import com.coopsystem.modules.savings.entity.AccountStatus;
+import com.coopsystem.modules.savings.entity.SavingsAccount;
+import com.coopsystem.modules.savings.repository.SavingsAccountRepository;
+import com.coopsystem.shared.exception.BusinessException;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class SavingsAccountService {
+
+    private final SavingsAccountRepository savingsAccountRepository;
+    private final AssociateRepository associateRepository;
+
+    public SavingsAccountService(
+            SavingsAccountRepository savingsAccountRepository,
+            AssociateRepository associateRepository) {
+
+        this.savingsAccountRepository = savingsAccountRepository;
+        this.associateRepository = associateRepository;
+    }
+
+    public List<SavingsAccountResponse> findAll() {
+
+        return savingsAccountRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public SavingsAccountResponse create(CreateSavingsAccountRequest request) {
+
+        Associate associate = associateRepository.findById(request.getAssociateId())
+                .orElseThrow(() ->
+                        new BusinessException("El asociado no existe"));
+
+        SavingsAccount account = new SavingsAccount();
+
+        account.setAssociate(associate);
+        account.setBalance(BigDecimal.ZERO);
+        account.setStatus(AccountStatus.ACTIVE);
+        account.setOpenedAt(LocalDateTime.now());
+        account.setAccountNumber(generateAccountNumber());
+
+        SavingsAccount saved = savingsAccountRepository.save(account);
+
+        return toResponse(saved);
+    }
+
+    private String generateAccountNumber() {
+
+        long total = savingsAccountRepository.count() + 1;
+
+        return String.valueOf(100000000L + total);
+    }
+
+    private SavingsAccountResponse toResponse(SavingsAccount account) {
+
+        return new SavingsAccountResponse(
+                account.getId(),
+                account.getAccountNumber(),
+                account.getBalance(),
+                account.getStatus().name(),
+                account.getOpenedAt(),
+                account.getAssociate().getId()
+        );
+    }
+}
