@@ -5,11 +5,11 @@ import java.time.LocalDateTime;
 
 public class TransactionResponse {
 
-    private String transactionType;
-    private BigDecimal amount;
-    private BigDecimal previousBalance;
-    private BigDecimal currentBalance;
-    private LocalDateTime transactionDate;
+    private final String transactionType;
+    private final BigDecimal amount;
+    private final BigDecimal previousBalance;
+    private final BigDecimal currentBalance;
+    private final LocalDateTime transactionDate;
 
     public TransactionResponse(
             String transactionType,

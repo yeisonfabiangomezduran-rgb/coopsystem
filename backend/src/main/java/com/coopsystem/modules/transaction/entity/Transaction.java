@@ -30,7 +30,7 @@ public class Transaction {
     @Column(name = "transaction_date", nullable = false)
     private LocalDateTime transactionDate;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "savings_account_id", nullable = false)
     private SavingsAccount savingsAccount;
 

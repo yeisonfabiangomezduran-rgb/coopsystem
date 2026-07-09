@@ -1,23 +1,23 @@
-package com.coopsystem.modules.savings.dto;
+package com.coopsystem.modules.transaction.dto;
 
 import java.math.BigDecimal;
 
-public class WithdrawResponse {
+public class DepositResponse {
 
-    private String accountNumber;
-    private BigDecimal previousBalance;
-    private BigDecimal withdrawAmount;
-    private BigDecimal currentBalance;
+    private final String accountNumber;
+    private final BigDecimal previousBalance;
+    private final BigDecimal depositAmount;
+    private final BigDecimal currentBalance;
 
-    public WithdrawResponse(
+    public DepositResponse(
             String accountNumber,
             BigDecimal previousBalance,
-            BigDecimal withdrawAmount,
+            BigDecimal depositAmount,
             BigDecimal currentBalance) {
 
         this.accountNumber = accountNumber;
         this.previousBalance = previousBalance;
-        this.withdrawAmount = withdrawAmount;
+        this.depositAmount = depositAmount;
         this.currentBalance = currentBalance;
     }
 
@@ -29,8 +29,8 @@ public class WithdrawResponse {
         return previousBalance;
     }
 
-    public BigDecimal getWithdrawAmount() {
-        return withdrawAmount;
+    public BigDecimal getDepositAmount() {
+        return depositAmount;
     }
 
     public BigDecimal getCurrentBalance() {

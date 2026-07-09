@@ -1,33 +1,98 @@
+##############################
+# Spring Boot
+##############################
+
 HELP.md
+
+##############################
+# Maven
+##############################
+
 target/
-.mvn/wrapper/maven-wrapper.jar
+
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### STS ###
-.apt_generated
+##############################
+# IntelliJ IDEA
+##############################
+
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+##############################
+# VS Code
+##############################
+
+.vscode/
+
+##############################
+# Eclipse / STS
+##############################
+
+.apt_generated/
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
-.sts4-cache
+.sts4-cache/
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
+##############################
+# NetBeans
+##############################
 
-### NetBeans ###
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
+
 build/
+
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-### VS Code ###
-.vscode/
+##############################
+# Operating System
+##############################
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+##############################
+# Logs
+##############################
+
+*.log
+
+##############################
+# Temporary files
+##############################
+
+*.tmp
+*.temp
+*.swp
+*.swo
+
+##############################
+# Environment variables
+##############################
+
+.env
+.env.*
+
+##############################
+# Maven Wrapper
+##############################
+
+# Se recomienda versionar el Maven Wrapper.
+# No agregar:
+# .mvn/wrapper/maven-wrapper.jar

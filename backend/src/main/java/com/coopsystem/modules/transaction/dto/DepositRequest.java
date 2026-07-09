@@ -1,17 +1,20 @@
-package com.coopsystem.modules.savings.dto;
+package com.coopsystem.modules.transaction.dto;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 
-public class WithdrawRequest {
+public class DepositRequest {
 
     @NotNull(message = "El monto es obligatorio")
-    @DecimalMin(value = "0.01", message = "El monto debe ser mayor que cero")
+    @DecimalMin(
+            value = "0.01",
+            message = "El monto debe ser mayor que cero"
+    )
     private BigDecimal amount;
 
-    public WithdrawRequest() {
+    public DepositRequest() {
     }
 
     public BigDecimal getAmount() {
