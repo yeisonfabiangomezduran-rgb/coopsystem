@@ -1,16 +1,17 @@
 package com.coopsystem.modules.savings.controller;
 
 import com.coopsystem.modules.savings.dto.CreateSavingsAccountRequest;
+import com.coopsystem.modules.savings.dto.DepositRequest;
+import com.coopsystem.modules.savings.dto.DepositResponse;
 import com.coopsystem.modules.savings.dto.SavingsAccountResponse;
+import com.coopsystem.modules.savings.dto.WithdrawRequest;
+import com.coopsystem.modules.savings.dto.WithdrawResponse;
 import com.coopsystem.modules.savings.service.SavingsAccountService;
+import com.coopsystem.modules.transaction.dto.TransactionResponse;
 import com.coopsystem.shared.response.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import com.coopsystem.modules.savings.dto.DepositRequest;
-import com.coopsystem.modules.savings.dto.DepositResponse;
-import com.coopsystem.modules.savings.dto.WithdrawRequest;
-import com.coopsystem.modules.savings.dto.WithdrawResponse;
 
 import java.util.List;
 
@@ -44,13 +45,24 @@ public class SavingsAccountController {
                 savingsAccountService.findById(id)
         );
     }
+
     @GetMapping("/account/{accountNumber}")
     public ApiResponse<SavingsAccountResponse> findByAccountNumber(
-        @PathVariable String accountNumber) {
+            @PathVariable String accountNumber) {
 
         return ApiResponse.success(
-            "Cuenta encontrada correctamente",
-            savingsAccountService.findByAccountNumber(accountNumber)
+                "Cuenta encontrada correctamente",
+                savingsAccountService.findByAccountNumber(accountNumber)
+        );
+    }
+
+    @GetMapping("/{id}/transactions")
+    public ApiResponse<List<TransactionResponse>> findTransactions(
+            @PathVariable Long id) {
+
+        return ApiResponse.success(
+                "Historial obtenido correctamente",
+                savingsAccountService.findTransactions(id)
         );
     }
 
@@ -70,25 +82,23 @@ public class SavingsAccountController {
 
     @PostMapping("/{id}/deposit")
     public ApiResponse<DepositResponse> deposit(
-        @PathVariable Long id,
-        @Valid @RequestBody DepositRequest request) {
+            @PathVariable Long id,
+            @Valid @RequestBody DepositRequest request) {
 
         return ApiResponse.success(
-            "Consignación realizada correctamente",
-            savingsAccountService.deposit(id, request)
+                "Consignación realizada correctamente",
+                savingsAccountService.deposit(id, request)
         );
     }
 
     @PostMapping("/{id}/withdraw")
     public ApiResponse<WithdrawResponse> withdraw(
-        @PathVariable Long id,
-        @Valid @RequestBody WithdrawRequest request) {
+            @PathVariable Long id,
+            @Valid @RequestBody WithdrawRequest request) {
 
         return ApiResponse.success(
-            "Retiro realizado correctamente",
-            savingsAccountService.withdraw(id, request)
+                "Retiro realizado correctamente",
+                savingsAccountService.withdraw(id, request)
         );
     }
-
-    
 }
