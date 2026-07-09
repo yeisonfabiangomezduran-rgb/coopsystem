@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import com.coopsystem.modules.savings.dto.DepositRequest;
 import com.coopsystem.modules.savings.dto.DepositResponse;
+import com.coopsystem.modules.savings.dto.WithdrawRequest;
+import com.coopsystem.modules.savings.dto.WithdrawResponse;
 
 import java.util.List;
 
@@ -46,11 +48,11 @@ public class SavingsAccountController {
     public ApiResponse<SavingsAccountResponse> findByAccountNumber(
         @PathVariable String accountNumber) {
 
-         return ApiResponse.success(
+        return ApiResponse.success(
             "Cuenta encontrada correctamente",
             savingsAccountService.findByAccountNumber(accountNumber)
-      );
-  }
+        );
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -74,6 +76,19 @@ public class SavingsAccountController {
         return ApiResponse.success(
             "Consignación realizada correctamente",
             savingsAccountService.deposit(id, request)
-      );
+        );
     }
+
+    @PostMapping("/{id}/withdraw")
+    public ApiResponse<WithdrawResponse> withdraw(
+        @PathVariable Long id,
+        @Valid @RequestBody WithdrawRequest request) {
+
+        return ApiResponse.success(
+            "Retiro realizado correctamente",
+            savingsAccountService.withdraw(id, request)
+        );
+    }
+
+    
 }

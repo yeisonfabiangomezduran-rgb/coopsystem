@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import com.coopsystem.modules.savings.dto.DepositRequest;
 import com.coopsystem.modules.savings.dto.DepositResponse;
+import com.coopsystem.modules.savings.dto.WithdrawRequest;
+import com.coopsystem.modules.savings.dto.WithdrawResponse;
 
 @Service
 public class SavingsAccountService {
@@ -74,7 +76,7 @@ public class SavingsAccountService {
                     new BusinessException("La cuenta de ahorro no existe"));
 
         return toResponse(account);
-   }
+    }
 
     public DepositResponse deposit(
         Long id,
@@ -85,7 +87,7 @@ public class SavingsAccountService {
                     new BusinessException("La cuenta de ahorro no existe"));
 
     if (account.getStatus() != AccountStatus.ACTIVE) {
-          throw new BusinessException("La cuenta no está activa");
+        throw new BusinessException("La cuenta no está activa");
         }
 
     BigDecimal previousBalance = account.getBalance();
@@ -102,8 +104,42 @@ public class SavingsAccountService {
             previousBalance,
             request.getAmount(),
             currentBalance
-     );
+        );
+    }
+
+    public WithdrawResponse withdraw(
+        Long id,
+        WithdrawRequest request) {
+
+    SavingsAccount account = savingsAccountRepository.findById(id)
+            .orElseThrow(() ->
+                    new BusinessException("La cuenta de ahorro no existe"));
+
+    if (account.getStatus() != AccountStatus.ACTIVE) {
+        throw new BusinessException("La cuenta no está activa");
+    }
+
+    BigDecimal previousBalance = account.getBalance();
+
+    if (previousBalance.compareTo(request.getAmount()) < 0) {
+        throw new BusinessException("Saldo insuficiente");
+    }
+
+    BigDecimal currentBalance =
+            previousBalance.subtract(request.getAmount());
+
+    account.setBalance(currentBalance);
+
+    savingsAccountRepository.save(account);
+
+    return new WithdrawResponse(
+            account.getAccountNumber(),
+            previousBalance,
+            request.getAmount(),
+            currentBalance
+    );
 }
+
 
     private String generateAccountNumber() {
 
