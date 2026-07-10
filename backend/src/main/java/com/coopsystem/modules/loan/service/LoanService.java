@@ -9,6 +9,7 @@ import com.coopsystem.modules.loan.entity.LoanStatus;
 import com.coopsystem.modules.loan.repository.LoanRepository;
 import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +28,7 @@ public class LoanService {
         this.associateRepository = associateRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<LoanResponse> findAll() {
 
         return loanRepository.findAll()
@@ -35,15 +37,13 @@ public class LoanService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public LoanResponse findById(Long id) {
 
-        Loan loan = loanRepository.findById(id)
-                .orElseThrow(() ->
-                        new BusinessException("El préstamo no existe"));
-
-        return toResponse(loan);
+        return toResponse(getLoan(id));
     }
 
+    @Transactional(readOnly = true)
     public LoanResponse findByLoanNumber(String loanNumber) {
 
         Loan loan = loanRepository.findByLoanNumber(loanNumber)
@@ -53,6 +53,7 @@ public class LoanService {
         return toResponse(loan);
     }
 
+    @Transactional
     public LoanResponse create(CreateLoanRequest request) {
 
         Associate associate = associateRepository.findById(request.getAssociateId())
@@ -72,6 +73,48 @@ public class LoanService {
         Loan saved = loanRepository.save(loan);
 
         return toResponse(saved);
+    }
+
+    @Transactional
+    public LoanResponse approve(Long id) {
+
+        Loan loan = getLoan(id);
+
+        if (loan.getStatus() != LoanStatus.PENDING) {
+            throw new BusinessException(
+                    "Solo se pueden aprobar préstamos pendientes");
+        }
+
+        loan.setStatus(LoanStatus.APPROVED);
+        loan.setApprovedAt(LocalDateTime.now());
+
+        Loan updated = loanRepository.save(loan);
+
+        return toResponse(updated);
+    }
+
+    @Transactional
+    public LoanResponse reject(Long id) {
+
+        Loan loan = getLoan(id);
+
+        if (loan.getStatus() != LoanStatus.PENDING) {
+            throw new BusinessException(
+                    "Solo se pueden rechazar préstamos pendientes");
+        }
+
+        loan.setStatus(LoanStatus.REJECTED);
+
+        Loan updated = loanRepository.save(loan);
+
+        return toResponse(updated);
+    }
+
+    private Loan getLoan(Long id) {
+
+        return loanRepository.findById(id)
+                .orElseThrow(() ->
+                        new BusinessException("El préstamo no existe"));
     }
 
     private String generateLoanNumber() {

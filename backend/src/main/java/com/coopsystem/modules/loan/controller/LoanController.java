@@ -61,4 +61,24 @@ public class LoanController {
                 response
         );
     }
+
+    @PatchMapping("/{id}/approve")
+    public ApiResponse<LoanResponse> approve(
+            @PathVariable Long id) {
+
+        return ApiResponse.success(
+                "Préstamo aprobado correctamente",
+                loanService.approve(id)
+        );
+    }
+
+    @PatchMapping("/{id}/reject")
+    public ApiResponse<LoanResponse> reject(
+            @PathVariable Long id) {
+
+        return ApiResponse.success(
+                "Préstamo rechazado correctamente",
+                loanService.reject(id)
+        );
+    }
 }

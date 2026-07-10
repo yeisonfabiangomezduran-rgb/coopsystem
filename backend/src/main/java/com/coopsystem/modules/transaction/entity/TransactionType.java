@@ -7,6 +7,7 @@ public enum TransactionType {
 
     DEPOSIT,
     WITHDRAW,
-    TRANSFER
+    TRANSFER,
+    LOAN_DISBURSEMENT
 
 }
