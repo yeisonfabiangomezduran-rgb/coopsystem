@@ -7,6 +7,8 @@ import com.coopsystem.modules.loan.dto.response.LoanResponse;
 import com.coopsystem.modules.loan.entity.Loan;
 import com.coopsystem.modules.loan.entity.LoanStatus;
 import com.coopsystem.modules.loan.repository.LoanRepository;
+import com.coopsystem.modules.transaction.service.TransactionService;
+import com.coopsystem.modules.treasury.service.TreasuryService;
 import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +21,19 @@ public class LoanService {
 
     private final LoanRepository loanRepository;
     private final AssociateRepository associateRepository;
+    private final TransactionService transactionService;
+    private final TreasuryService treasuryService;
 
     public LoanService(
             LoanRepository loanRepository,
-            AssociateRepository associateRepository) {
+            AssociateRepository associateRepository,
+            TransactionService transactionService,
+            TreasuryService treasuryService) {
 
         this.loanRepository = loanRepository;
         this.associateRepository = associateRepository;
+        this.transactionService = transactionService;
+        this.treasuryService = treasuryService;
     }
 
     @Transactional(readOnly = true)
@@ -80,10 +88,7 @@ public class LoanService {
 
         Loan loan = getLoan(id);
 
-        if (loan.getStatus() != LoanStatus.PENDING) {
-            throw new BusinessException(
-                    "Solo se pueden aprobar préstamos pendientes");
-        }
+        validatePendingLoan(loan);
 
         loan.setStatus(LoanStatus.APPROVED);
         loan.setApprovedAt(LocalDateTime.now());
@@ -98,10 +103,7 @@ public class LoanService {
 
         Loan loan = getLoan(id);
 
-        if (loan.getStatus() != LoanStatus.PENDING) {
-            throw new BusinessException(
-                    "Solo se pueden rechazar préstamos pendientes");
-        }
+        validatePendingLoan(loan);
 
         loan.setStatus(LoanStatus.REJECTED);
 
@@ -110,6 +112,33 @@ public class LoanService {
         return toResponse(updated);
     }
 
+    @Transactional
+    public LoanResponse disburse(Long id) {
+
+        Loan loan = getLoan(id);
+
+        if (loan.getStatus() != LoanStatus.APPROVED) {
+            throw new BusinessException(
+                    "Solo se pueden desembolsar préstamos aprobados");
+        }
+
+        treasuryService.withdrawLoan(
+                loan.getAmount());
+
+        transactionService.depositLoan(
+                loan.getAssociate().getId(),
+                loan.getAmount());
+
+        loan.setStatus(LoanStatus.DISBURSED);
+
+        Loan updated = loanRepository.save(loan);
+
+        return toResponse(updated);
+    }
+
+    /**
+     * Obtiene un préstamo por su ID.
+     */
     private Loan getLoan(Long id) {
 
         return loanRepository.findById(id)
@@ -117,6 +146,20 @@ public class LoanService {
                         new BusinessException("El préstamo no existe"));
     }
 
+    /**
+     * Valida que el préstamo esté pendiente.
+     */
+    private void validatePendingLoan(Loan loan) {
+
+        if (loan.getStatus() != LoanStatus.PENDING) {
+            throw new BusinessException(
+                    "La operación solo está permitida para préstamos pendientes");
+        }
+    }
+
+    /**
+     * Genera el número consecutivo del préstamo.
+     */
     private String generateLoanNumber() {
 
         long total = loanRepository.count() + 1;
@@ -124,6 +167,9 @@ public class LoanService {
         return String.valueOf(200000000L + total);
     }
 
+    /**
+     * Convierte la entidad en DTO.
+     */
     private LoanResponse toResponse(Loan loan) {
 
         return new LoanResponse(

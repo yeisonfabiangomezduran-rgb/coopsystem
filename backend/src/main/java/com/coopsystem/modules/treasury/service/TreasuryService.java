@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Service
 public class TreasuryService {
@@ -64,6 +63,29 @@ public class TreasuryService {
         return toResponse(updated);
     }
 
+    /**
+     * Retira fondos para el desembolso de un préstamo.
+     */
+    @Transactional
+    public void withdrawLoan(BigDecimal amount) {
+
+        Treasury treasury = getTreasury();
+
+        if (treasury.getBalance().compareTo(amount) < 0) {
+            throw new BusinessException(
+                    "La cooperativa no tiene fondos suficientes para desembolsar el préstamo");
+        }
+
+        treasury.setBalance(
+                treasury.getBalance().subtract(amount)
+        );
+
+        treasuryRepository.save(treasury);
+    }
+
+    /**
+     * Obtiene la Caja General.
+     */
     private Treasury getTreasury() {
 
         return treasuryRepository.findByName(MAIN_TREASURY)
@@ -72,6 +94,9 @@ public class TreasuryService {
                                 "La Caja General no existe"));
     }
 
+    /**
+     * Convierte la entidad en DTO.
+     */
     private TreasuryResponse toResponse(Treasury treasury) {
 
         return new TreasuryResponse(

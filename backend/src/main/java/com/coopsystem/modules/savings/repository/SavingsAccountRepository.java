@@ -10,4 +10,6 @@ public interface SavingsAccountRepository
 
     Optional<SavingsAccount> findByAccountNumber(String accountNumber);
 
+    Optional<SavingsAccount> findByAssociateId(Long associateId);
+
 }

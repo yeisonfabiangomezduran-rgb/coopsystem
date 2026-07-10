@@ -114,6 +114,28 @@ public class TransactionService {
                 .toList();
     }
 
+    @Transactional
+    public void depositLoan(
+            Long associateId,
+            BigDecimal amount) {
+
+        SavingsAccount account = getActiveAssociateAccount(associateId);
+
+        BigDecimal previousBalance = account.getBalance();
+        BigDecimal currentBalance = previousBalance.add(amount);
+
+        account.setBalance(currentBalance);
+        savingsAccountRepository.save(account);
+
+        saveTransaction(
+                account,
+                TransactionType.LOAN_DISBURSEMENT,
+                amount,
+                previousBalance,
+                currentBalance
+        );
+    }
+
     /**
      * Obtiene una cuenta de ahorro por su ID.
      */
@@ -133,6 +155,25 @@ public class TransactionService {
 
         if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new BusinessException("La cuenta no está activa");
+        }
+
+        return account;
+    }
+
+    /**
+     * Obtiene la cuenta activa de un asociado.
+     */
+    private SavingsAccount getActiveAssociateAccount(Long associateId) {
+
+        SavingsAccount account = savingsAccountRepository
+                .findByAssociateId(associateId)
+                .orElseThrow(() ->
+                        new BusinessException(
+                                "El asociado no tiene una cuenta de ahorro"));
+
+        if (account.getStatus() != AccountStatus.ACTIVE) {
+            throw new BusinessException(
+                    "La cuenta de ahorro no está activa");
         }
 
         return account;

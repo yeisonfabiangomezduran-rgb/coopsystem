@@ -81,4 +81,16 @@ public class LoanController {
                 loanService.reject(id)
         );
     }
+
+    @PatchMapping("/{id}/disburse")
+    public ApiResponse<LoanResponse> disburse(
+            @PathVariable Long id) {
+
+        return ApiResponse.success(
+                "Préstamo desembolsado correctamente",
+                loanService.disburse(id)
+        );
+    }
+
+    
 }
