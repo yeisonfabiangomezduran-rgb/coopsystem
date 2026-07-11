@@ -12,4 +12,6 @@ public interface SavingsAccountRepository
 
     Optional<SavingsAccount> findByAssociateId(Long associateId);
 
+    boolean existsByAssociateId(Long associateId);
+
 }

@@ -7,28 +7,54 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "savings_accounts")
+@Table(
+        name = "savings_accounts",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_savings_account_associate",
+                        columnNames = "associate_id"
+                )
+        }
+)
 public class SavingsAccount {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "account_number", nullable = false, unique = true, length = 20)
+    @Column(
+            name = "account_number",
+            nullable = false,
+            unique = true,
+            length = 20
+    )
     private String accountNumber;
 
-    @Column(nullable = false, precision = 18, scale = 2)
+    @Column(
+            nullable = false,
+            precision = 18,
+            scale = 2
+    )
     private BigDecimal balance;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(
+            nullable = false,
+            length = 20
+    )
     private AccountStatus status;
 
-    @Column(name = "opened_at", nullable = false)
+    @Column(
+            name = "opened_at",
+            nullable = false
+    )
     private LocalDateTime openedAt;
 
-    @ManyToOne
-    @JoinColumn(name = "associate_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "associate_id",
+            nullable = false
+    )
     private Associate associate;
 
     public SavingsAccount() {

@@ -9,6 +9,7 @@ import com.coopsystem.modules.savings.entity.SavingsAccount;
 import com.coopsystem.modules.savings.repository.SavingsAccountRepository;
 import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -28,6 +29,7 @@ public class SavingsAccountService {
         this.associateRepository = associateRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<SavingsAccountResponse> findAll() {
 
         return savingsAccountRepository.findAll()
@@ -36,6 +38,7 @@ public class SavingsAccountService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public SavingsAccountResponse findById(Long id) {
 
         SavingsAccount account = savingsAccountRepository.findById(id)
@@ -45,6 +48,7 @@ public class SavingsAccountService {
         return toResponse(account);
     }
 
+    @Transactional(readOnly = true)
     public SavingsAccountResponse findByAccountNumber(String accountNumber) {
 
         SavingsAccount account = savingsAccountRepository
@@ -55,7 +59,13 @@ public class SavingsAccountService {
         return toResponse(account);
     }
 
+    @Transactional
     public SavingsAccountResponse create(CreateSavingsAccountRequest request) {
+
+        if (savingsAccountRepository.existsByAssociateId(request.getAssociateId())) {
+            throw new BusinessException(
+                    "El asociado ya tiene una cuenta de ahorro");
+        }
 
         Associate associate = associateRepository.findById(request.getAssociateId())
                 .orElseThrow(() ->
@@ -74,6 +84,9 @@ public class SavingsAccountService {
         return toResponse(saved);
     }
 
+    /**
+     * Genera el número consecutivo de la cuenta de ahorro.
+     */
     private String generateAccountNumber() {
 
         long total = savingsAccountRepository.count() + 1;
@@ -81,6 +94,9 @@ public class SavingsAccountService {
         return String.valueOf(100000000L + total);
     }
 
+    /**
+     * Convierte la entidad en DTO.
+     */
     private SavingsAccountResponse toResponse(SavingsAccount account) {
 
         return new SavingsAccountResponse(
