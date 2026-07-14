@@ -23,17 +23,20 @@ public class LoanService {
     private final AssociateRepository associateRepository;
     private final TransactionService transactionService;
     private final TreasuryService treasuryService;
+    private final LoanInstallmentService loanInstallmentService;
 
     public LoanService(
             LoanRepository loanRepository,
             AssociateRepository associateRepository,
             TransactionService transactionService,
-            TreasuryService treasuryService) {
+            TreasuryService treasuryService,
+            LoanInstallmentService loanInstallmentService) {
 
         this.loanRepository = loanRepository;
         this.associateRepository = associateRepository;
         this.transactionService = transactionService;
         this.treasuryService = treasuryService;
+        this.loanInstallmentService = loanInstallmentService;
     }
 
     @Transactional(readOnly = true)
@@ -122,16 +125,23 @@ public class LoanService {
                     "Solo se pueden desembolsar préstamos aprobados");
         }
 
+        // Retira el dinero de la Caja General
         treasuryService.withdrawLoan(
                 loan.getAmount());
 
+        // Consigna el dinero en la cuenta de ahorro del asociado
         transactionService.depositLoan(
                 loan.getAssociate().getId(),
                 loan.getAmount());
 
+        // Cambia el estado del préstamo
         loan.setStatus(LoanStatus.DISBURSED);
 
         Loan updated = loanRepository.save(loan);
+
+        // Genera automáticamente el cronograma de pagos
+        loanInstallmentService.generateSchedule(
+                updated.getId());
 
         return toResponse(updated);
     }

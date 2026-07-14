@@ -1,9 +1,7 @@
 package com.coopsystem.modules.loan.amortization.strategy;
 
+import com.coopsystem.modules.loan.amortization.dto.AmortizationSchedule;
 import com.coopsystem.modules.loan.entity.Loan;
-import com.coopsystem.modules.loan.entity.LoanInstallment;
-
-import java.util.List;
 
 /**
  * Define el contrato para los diferentes sistemas de amortización.
@@ -11,11 +9,8 @@ import java.util.List;
 public interface AmortizationStrategy {
 
     /**
-     * Genera el cronograma de cuotas de un préstamo.
-     *
-     * @param loan préstamo a amortizar
-     * @return lista de cuotas generadas
+     * Genera el cronograma de amortización.
      */
-    List<LoanInstallment> generateSchedule(Loan loan);
+    AmortizationSchedule generateSchedule(Loan loan);
 
 }

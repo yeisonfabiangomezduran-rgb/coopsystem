@@ -1,37 +1,144 @@
 package com.coopsystem.modules.loan.amortization.strategy;
 
+import com.coopsystem.modules.loan.amortization.dto.AmortizationSchedule;
+import com.coopsystem.modules.loan.amortization.dto.InstallmentCalculation;
+import com.coopsystem.modules.loan.amortization.util.FinancialFormula;
 import com.coopsystem.modules.loan.entity.Loan;
-import com.coopsystem.modules.loan.entity.LoanInstallment;
 import org.springframework.stereotype.Component;
 
-import java.math.MathContext;
-import java.math.RoundingMode;
-import java.util.List;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
-/**
- * Implementación del Sistema Francés (cuota fija).
- */
 @Component
 public class FrenchAmortizationStrategy implements AmortizationStrategy {
 
-    /**
-     * Precisión utilizada en todos los cálculos financieros.
-     */
-    private static final MathContext MATH_CONTEXT =
-            new MathContext(15, RoundingMode.HALF_UP);
-
-    /**
-     * Escala utilizada para valores monetarios.
-     */
-    private static final int SCALE = 2;
-
     @Override
-    public List<LoanInstallment> generateSchedule(Loan loan) {
+    public AmortizationSchedule generateSchedule(Loan loan) {
 
-        // Aquí construiremos el algoritmo completo.
+        BigDecimal monthlyPayment =
+                FinancialFormula.calculateMonthlyPayment(
+                        loan.getAmount(),
+                        loan.getInterestRate(),
+                        loan.getTermMonths()
+                );
 
-        throw new UnsupportedOperationException(
-                "Generación de cronograma aún no implementada");
+        AmortizationSchedule schedule =
+                new AmortizationSchedule();
+
+        schedule.setMonthlyPayment(monthlyPayment);
+
+        buildInstallments(
+                loan,
+                monthlyPayment,
+                schedule
+        );
+
+        return schedule;
+    }
+
+    /**
+     * Genera todas las cuotas del préstamo.
+     */
+    private void buildInstallments(
+            Loan loan,
+            BigDecimal monthlyPayment,
+            AmortizationSchedule schedule) {
+
+        BigDecimal balance = loan.getAmount();
+
+        BigDecimal totalInterest = BigDecimal.ZERO;
+
+        for (int installment = 1;
+             installment <= loan.getTermMonths();
+             installment++) {
+
+            BigDecimal interest;
+            BigDecimal principal;
+            BigDecimal payment;
+            BigDecimal remainingBalance;
+
+            boolean lastInstallment =
+                    installment == loan.getTermMonths();
+
+            if (lastInstallment) {
+
+                // Última cuota: se ajusta el capital para dejar saldo en cero.
+                interest = FinancialFormula.calculateInterest(
+                        balance,
+                        loan.getInterestRate());
+
+                principal = balance;
+
+                payment = principal.add(interest);
+
+                remainingBalance = BigDecimal.ZERO;
+
+            } else {
+
+                interest = FinancialFormula.calculateInterest(
+                        balance,
+                        loan.getInterestRate());
+
+                payment = monthlyPayment;
+
+                principal = FinancialFormula.calculatePrincipal(
+                        payment,
+                        interest);
+
+                remainingBalance =
+                        FinancialFormula.calculateRemainingBalance(
+                                balance,
+                                principal);
+            }
+
+            LocalDate dueDate = loan.getApprovedAt() != null
+                    ? loan.getApprovedAt()
+                            .toLocalDate()
+                            .plusMonths(installment)
+                    : LocalDate.now().plusMonths(installment);
+
+            InstallmentCalculation calculation =
+                    buildInstallment(
+                            installment,
+                            dueDate,
+                            principal,
+                            interest,
+                            payment,
+                            remainingBalance
+                    );
+
+            schedule.getInstallments().add(calculation);
+
+            totalInterest = totalInterest.add(interest);
+
+            balance = remainingBalance;
+        }
+
+        schedule.setTotalInterest(totalInterest);
+
+        schedule.setTotalAmount(
+                loan.getAmount().add(totalInterest));
+    }
+
+    /**
+     * Construye una cuota del cronograma.
+     */
+    private InstallmentCalculation buildInstallment(
+            Integer installmentNumber,
+            LocalDate dueDate,
+            BigDecimal principal,
+            BigDecimal interest,
+            BigDecimal payment,
+            BigDecimal remainingBalance) {
+
+        return new InstallmentCalculation(
+                installmentNumber,
+                dueDate,
+                principal,
+                interest,
+                payment,
+                remainingBalance
+        );
     }
 
 }
