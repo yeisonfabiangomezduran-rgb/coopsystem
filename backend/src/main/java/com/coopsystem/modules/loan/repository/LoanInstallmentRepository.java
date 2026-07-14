@@ -10,22 +10,17 @@ import java.util.Optional;
 public interface LoanInstallmentRepository
         extends JpaRepository<LoanInstallment, Long> {
 
-    /**
-     * Obtiene todas las cuotas de un préstamo ordenadas por número.
-     */
-    List<LoanInstallment> findByLoanIdOrderByInstallmentNumberAsc(Long loanId);
+    List<LoanInstallment> findByLoanIdOrderByInstallmentNumberAsc(
+            Long loanId);
 
-    /**
-     * Obtiene la siguiente cuota pendiente.
-     */
     Optional<LoanInstallment> findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
             Long loanId,
-            InstallmentStatus status
-    );
+            InstallmentStatus status);
 
-    /**
-     * Obtiene todas las cuotas con un estado específico.
-     */
-    List<LoanInstallment> findByStatus(InstallmentStatus status);
+    long countByLoanIdAndStatus(
+            Long loanId,
+            InstallmentStatus status);
 
+    List<LoanInstallment> findByStatus(
+            InstallmentStatus status);
 }

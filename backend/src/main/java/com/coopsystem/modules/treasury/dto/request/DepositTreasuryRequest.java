@@ -17,6 +17,10 @@ public class DepositTreasuryRequest {
     public DepositTreasuryRequest() {
     }
 
+    public DepositTreasuryRequest(BigDecimal amount) {
+        this.amount = amount;
+    }
+
     public BigDecimal getAmount() {
         return amount;
     }
