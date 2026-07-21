@@ -17,7 +17,7 @@ import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
-import { notifySuccess } from "../../components/ui/toastNotifications";
+import { notifyError, notifySuccess } from "../../components/ui/toastNotifications";
 import { initialAssociates } from "../../mock/associates";
 
 const LoanChart = lazy(() => import("../dashboard/LoanChart"));
@@ -55,7 +55,7 @@ const loanFilters = [
   { id: "advisor", label: "Asesor", ariaLabel: "Filtrar por asesor", options: ["Todos", "Carlos Ramírez", "Laura Gómez", "Andrés Torres"] },
 ];
 
-const statusVariant = { Pendiente: "warning", "Pendiente de aprobación": "warning", "En estudio": "neutral", Aprobado: "success", Desembolsado: "success", Rechazado: "neutral" };
+const statusVariant = { Pendiente: "warning", "Pendiente de aprobación": "warning", "En estudio": "neutral", Aprobado: "success", Desembolsado: "success", Rechazado: "neutral", Cancelado: "neutral" };
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value).replace("COP", "$ ");
@@ -93,9 +93,24 @@ function calculateLoan(creditLine, requestedAmount, term) {
   };
 }
 
+function getLoanDetails(loan) {
+  return loan.annualRate ? loan : { ...loan, ...calculateLoan(creditLines.find((line) => line.name === loan.product), loan.amount, loan.term) };
+}
+
+function getAssociateByName(name) {
+  return initialAssociates.find((associate) => `${associate.firstName} ${associate.lastName}` === name) ?? null;
+}
+
 export default function Loans() {
   const [loans, setLoans] = useState(initialLoans);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLoan, setEditingLoan] = useState(null);
+  const [detailLoan, setDetailLoan] = useState(null);
+  const [historyLoan, setHistoryLoan] = useState(null);
+  const [paymentLoan, setPaymentLoan] = useState(null);
+  const [cancelLoan, setCancelLoan] = useState(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [loanHistories, setLoanHistories] = useState(() => Object.fromEntries(initialLoans.map((loan) => [loan.number, [{ date: loan.requestedAt, description: "Solicitud de préstamo registrada", user: "Laura Gómez" }]])));
   const [selectedAssociate, setSelectedAssociate] = useState(null);
   const [associateError, setAssociateError] = useState("");
   const [creditLineName, setCreditLineName] = useState("");
@@ -134,7 +149,31 @@ export default function Loans() {
     setCreditLineName("");
     setRequestedAmount("");
     setTerm("");
+    setEditingLoan(null);
     setIsModalOpen(true);
+  }
+
+  function openEditModal(loan) {
+    const associate = getAssociateByName(loan.associate);
+    setEditingLoan(loan);
+    setSelectedAssociate(associate);
+    setAssociateError(associate ? "" : "");
+    reset({ creditLine: loan.product, requestedAmount: loan.amount.toString(), term: loan.term.toString(), destination: loan.destination ?? "", observations: loan.observations ?? "" });
+    setCreditLineName(loan.product);
+    setRequestedAmount(loan.amount.toString());
+    setTerm(loan.term.toString());
+    setIsModalOpen(true);
+    notifySuccess("Formulario de préstamo cargado para edición.");
+  }
+
+  function openDetailModal(loan) {
+    setDetailLoan(loan);
+    notifySuccess("Información del préstamo cargada.");
+  }
+
+  function openHistoryModal(loan) {
+    setHistoryLoan(loan);
+    notifySuccess("Historial del préstamo cargado.");
   }
 
   function handleCloseModal() {
@@ -144,7 +183,61 @@ export default function Loans() {
     setCreditLineName("");
     setRequestedAmount("");
     setTerm("");
+    setEditingLoan(null);
     setIsModalOpen(false);
+  }
+
+  function appendHistory(loan, description) {
+    setLoanHistories((current) => ({ ...current, [loan.number]: [{ date: formatDate(new Date()), description, user: "Usuario actual" }, ...(current[loan.number] ?? [])] }));
+  }
+
+  function updateLoanStatus(loan, status, message) {
+    setLoans((current) => current.map((currentLoan) => currentLoan.number === loan.number ? { ...currentLoan, status } : currentLoan));
+    appendHistory(loan, message);
+    notifySuccess(message);
+  }
+
+  function approveLoan(loan) {
+    if (!["Pendiente", "Pendiente de aprobación", "En estudio"].includes(loan.status)) {
+      notifyError("Este préstamo no está disponible para aprobación.");
+      return;
+    }
+    updateLoanStatus(loan, "Aprobado", "Préstamo aprobado correctamente.");
+  }
+
+  function disburseLoan(loan) {
+    if (loan.status !== "Aprobado") {
+      notifyError("Solo los préstamos aprobados pueden desembolsarse.");
+      return;
+    }
+    updateLoanStatus(loan, "Desembolsado", "Préstamo desembolsado correctamente.");
+  }
+
+  function openPaymentModal(loan) {
+    if (loan.status !== "Desembolsado") {
+      notifyError("Solo puedes registrar pagos de préstamos desembolsados.");
+      return;
+    }
+    setPaymentAmount("");
+    setPaymentLoan(loan);
+  }
+
+  function registerPayment(event) {
+    event.preventDefault();
+    if (!Number(paymentAmount)) return;
+    appendHistory(paymentLoan, `Pago registrado por ${formatCurrency(Number(paymentAmount))}`);
+    setPaymentLoan(null);
+    notifySuccess("Pago registrado correctamente.");
+  }
+
+  function printLoan(loan) {
+    appendHistory(loan, "Solicitud preparada para impresión");
+    notifySuccess(`Solicitud ${loan.number} lista para imprimir.`);
+  }
+
+  function confirmCancelLoan() {
+    updateLoanStatus(cancelLoan, "Cancelado", "Préstamo cancelado correctamente.");
+    setCancelLoan(null);
   }
 
   function onSubmit(data) {
@@ -155,22 +248,28 @@ export default function Loans() {
     if (!loanCalculation) return;
 
     const loan = {
-      number: `PRE-${String(nextNumber).padStart(4, "0")}`,
+      number: editingLoan?.number ?? `PRE-${String(nextNumber).padStart(4, "0")}`,
       associate: `${selectedAssociate.firstName} ${selectedAssociate.lastName}`,
       product: data.creditLine,
       amount: Number(data.requestedAmount),
       term: Number(data.term),
-      status: "Pendiente",
-      requestedAt: formatDate(new Date()),
+      status: editingLoan?.status ?? "Pendiente",
+      requestedAt: editingLoan?.requestedAt ?? formatDate(new Date()),
       destination: data.destination.trim(),
       observations: data.observations.trim(),
       ...loanCalculation,
     };
 
-    setLoans((current) => [loan, ...current]);
-    setNextNumber((current) => current + 1);
+    if (editingLoan) {
+      setLoans((current) => current.map((currentLoan) => currentLoan.number === editingLoan.number ? loan : currentLoan));
+      appendHistory(loan, "Información del préstamo actualizada");
+    } else {
+      setLoans((current) => [loan, ...current]);
+      setLoanHistories((current) => ({ ...current, [loan.number]: [{ date: loan.requestedAt, description: "Solicitud de préstamo registrada", user: "Usuario actual" }] }));
+      setNextNumber((current) => current + 1);
+    }
     handleCloseModal();
-    notifySuccess("Solicitud de préstamo creada correctamente.");
+    notifySuccess(editingLoan ? "Préstamo actualizado correctamente." : "Solicitud de préstamo creada correctamente.");
   }
 
   return (
@@ -187,14 +286,14 @@ export default function Loans() {
         <FilterBar filters={loanFilters} gridClassName="xl:grid-cols-[minmax(0,1.8fr)_minmax(10rem,0.65fr)_minmax(12rem,0.8fr)_minmax(10rem,0.7fr)_auto]" idPrefix="loans" searchAriaLabel="Buscar préstamo" searchLabel="Buscar préstamo" searchPlaceholder="Número o nombre del asociado" />
         <DataSection className="overflow-hidden p-0" description={`${loans.length} préstamos registrados.`} headerClassName="border-b border-slate-200 px-6 py-5" title="Listado de préstamos">
           {loans.length === 0 ? <EmptyState icon={<HandCoins size={24} />} title="Aún no hay préstamos registrados" description="Cuando registres un préstamo, su información aparecerá en este listado." action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nuevo préstamo</Button>} /> : (
-            <Table className="min-w-300"><thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-4">Número</th><th className="px-6 py-4">Asociado</th><th className="px-6 py-4">Producto</th><th className="px-6 py-4">Monto</th><th className="px-6 py-4">Plazo</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Fecha solicitud</th><th className="px-6 py-4 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-200">{loans.map((loan) => <tr className="transition hover:bg-slate-50/70" key={loan.number}><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{loan.number}</td><td className="px-6 py-4 text-sm font-bold text-slate-800">{loan.associate}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{loan.product}</td><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{formatCurrency(loan.amount)}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{`${loan.term} meses`}</td><td className="px-6 py-4"><Badge variant={statusVariant[loan.status]}>{loan.status}</Badge></td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{loan.requestedAt}</td><td className="px-6 py-4"><ActionMenu label={loan.number} /></td></tr>)}</tbody></Table>
+            <Table className="min-w-300"><thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-4">Número</th><th className="px-6 py-4">Asociado</th><th className="px-6 py-4">Producto</th><th className="px-6 py-4">Monto</th><th className="px-6 py-4">Plazo</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Fecha solicitud</th><th className="px-6 py-4 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-200">{loans.map((loan) => <tr className="transition hover:bg-slate-50/70" key={loan.number}><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{loan.number}</td><td className="px-6 py-4 text-sm font-bold text-slate-800">{loan.associate}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{loan.product}</td><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{formatCurrency(loan.amount)}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{`${loan.term} meses`}</td><td className="px-6 py-4"><Badge variant={statusVariant[loan.status]}>{loan.status}</Badge></td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{loan.requestedAt}</td><td className="px-6 py-4"><ActionMenu label={loan.number} onEdit={() => openEditModal(loan)} onView={() => openDetailModal(loan)} options={[{ label: "Ver historial", onClick: () => openHistoryModal(loan) }, { label: "Aprobar préstamo", onClick: () => approveLoan(loan) }, { label: "Desembolsar préstamo", onClick: () => disburseLoan(loan) }, { label: "Registrar pago", onClick: () => openPaymentModal(loan) }, { label: "Imprimir solicitud", onClick: () => printLoan(loan) }, { label: "Cancelar préstamo", onClick: () => setCancelLoan(loan) }]} /></td></tr>)}</tbody></Table>
           )}
         </DataSection>
       </PageContainer>
 
-      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg" title="Nuevo préstamo">
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg" title={editingLoan ? "Editar préstamo" : "Nuevo préstamo"}>
         <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
-          <AssociateSearch associates={initialAssociates} onClear={() => { setSelectedAssociate(null); setAssociateError(""); }} onSelect={(associate) => { setSelectedAssociate(associate); setAssociateError(""); }} selectedAssociate={selectedAssociate} selectedSummary={selectedAssociateSummary} />
+          <AssociateSearch associates={initialAssociates} onClear={() => { setSelectedAssociate(null); setAssociateError(""); }} onSelect={(associate) => { setSelectedAssociate(associate); setAssociateError(""); }} readOnly={Boolean(editingLoan)} selectedAssociate={selectedAssociate} selectedSummary={selectedAssociateSummary} />
           {associateError && <p className="text-sm font-semibold text-rose-600">{associateError}</p>}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Línea de crédito</span><select {...register("creditLine", { required: "La línea de crédito es obligatoria", onChange: (event) => setCreditLineName(event.target.value) })} aria-invalid={errors.creditLine ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100"><option value="">Selecciona una línea</option>{creditLines.map((line) => <option key={line.name} value={line.name}>{line.name}</option>)}</select>{errors.creditLine && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.creditLine.message}</p>}</label>
@@ -203,9 +302,25 @@ export default function Loans() {
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Destino</span><Input {...register("destination")} placeholder="Destino del crédito" /></label>
           </div>
           <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Observaciones</span><textarea {...register("observations")} className="min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-3 focus:ring-blue-100" placeholder="Registra las observaciones de la solicitud" /></label>
-          <div className="rounded-xl bg-slate-50 p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-extrabold text-slate-900">Resumen del préstamo</h3><p className="text-sm font-medium text-slate-500">Cálculo simulado según la línea y el plazo seleccionados.</p></div>{loanCalculation && <Badge variant="warning">Pendiente</Badge>}</div>{loanCalculation ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold text-slate-500">Número del préstamo</p><p className="mt-1 text-sm font-extrabold text-slate-800">{`PRE-${String(nextNumber).padStart(4, "0")}`}</p></div><div><p className="text-xs font-bold text-slate-500">Tasa de interés</p><p className="mt-1 text-sm font-extrabold text-slate-800">{`${loanCalculation.annualRate}% E.A.`}</p></div><div><p className="text-xs font-bold text-slate-500">Cuota mensual</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.monthlyInstallment)}</p></div><div><p className="text-xs font-bold text-slate-500">Total intereses</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.totalInterest)}</p></div><div><p className="text-xs font-bold text-slate-500">Total a pagar</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.totalPayment)}</p></div><div><p className="text-xs font-bold text-slate-500">Primer pago</p><p className="mt-1 text-sm font-extrabold text-slate-800">{loanCalculation.firstPaymentDate}</p></div><div><p className="text-xs font-bold text-slate-500">Estado inicial</p><div className="mt-1"><Badge variant="warning">Pendiente</Badge></div></div></div> : <p className="mt-4 text-sm font-semibold text-slate-500">Completa la línea de crédito, el valor y el plazo para ver el cálculo.</p>}</div>
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={handleCloseModal} type="button" variant="secondary">Cancelar</Button><Button type="submit">Guardar solicitud</Button></div>
+          <div className="rounded-xl bg-slate-50 p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-extrabold text-slate-900">Resumen del préstamo</h3><p className="text-sm font-medium text-slate-500">Cálculo simulado según la línea y el plazo seleccionados.</p></div>{loanCalculation && <Badge variant={statusVariant[editingLoan?.status] ?? "warning"}>{editingLoan?.status ?? "Pendiente"}</Badge>}</div>{loanCalculation ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold text-slate-500">Número del préstamo</p><p className="mt-1 text-sm font-extrabold text-slate-800">{editingLoan?.number ?? `PRE-${String(nextNumber).padStart(4, "0")}`}</p></div><div><p className="text-xs font-bold text-slate-500">Tasa de interés</p><p className="mt-1 text-sm font-extrabold text-slate-800">{`${loanCalculation.annualRate}% E.A.`}</p></div><div><p className="text-xs font-bold text-slate-500">Cuota mensual</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.monthlyInstallment)}</p></div><div><p className="text-xs font-bold text-slate-500">Total intereses</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.totalInterest)}</p></div><div><p className="text-xs font-bold text-slate-500">Total a pagar</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(loanCalculation.totalPayment)}</p></div><div><p className="text-xs font-bold text-slate-500">Primer pago</p><p className="mt-1 text-sm font-extrabold text-slate-800">{loanCalculation.firstPaymentDate}</p></div><div><p className="text-xs font-bold text-slate-500">Estado</p><div className="mt-1"><Badge variant={statusVariant[editingLoan?.status] ?? "warning"}>{editingLoan?.status ?? "Pendiente"}</Badge></div></div></div> : <p className="mt-4 text-sm font-semibold text-slate-500">Completa la línea de crédito, el valor y el plazo para ver el cálculo.</p>}</div>
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={handleCloseModal} type="button" variant="secondary">Cancelar</Button><Button type="submit">{editingLoan ? "Guardar cambios" : "Guardar solicitud"}</Button></div>
         </form>
+      </Modal>
+
+      <Modal isOpen={Boolean(detailLoan)} onClose={() => setDetailLoan(null)} size="lg" title={`Préstamo ${detailLoan?.number ?? ""}`}>
+        {detailLoan && (() => { const details = getLoanDetails(detailLoan); return <div className="space-y-5"><div className="flex flex-col gap-3 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold text-slate-500">Estado actual</p><p className="mt-1 text-base font-extrabold text-slate-900">{detailLoan.status}</p></div><Badge variant={statusVariant[detailLoan.status]}>{detailLoan.status}</Badge></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><div><p className="text-xs font-bold text-slate-500">Asociado</p><p className="mt-1 text-sm font-extrabold text-slate-800">{detailLoan.associate}</p></div><div><p className="text-xs font-bold text-slate-500">Producto</p><p className="mt-1 text-sm font-extrabold text-slate-800">{detailLoan.product}</p></div><div><p className="text-xs font-bold text-slate-500">Fecha de solicitud</p><p className="mt-1 text-sm font-extrabold text-slate-800">{detailLoan.requestedAt}</p></div><div><p className="text-xs font-bold text-slate-500">Monto solicitado</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(detailLoan.amount)}</p></div><div><p className="text-xs font-bold text-slate-500">Plazo</p><p className="mt-1 text-sm font-extrabold text-slate-800">{`${detailLoan.term} meses`}</p></div><div><p className="text-xs font-bold text-slate-500">Tasa de interés</p><p className="mt-1 text-sm font-extrabold text-slate-800">{`${details.annualRate}% E.A.`}</p></div><div><p className="text-xs font-bold text-slate-500">Cuota mensual estimada</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(details.monthlyInstallment)}</p></div><div><p className="text-xs font-bold text-slate-500">Total de intereses</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(details.totalInterest)}</p></div><div><p className="text-xs font-bold text-slate-500">Total a pagar</p><p className="mt-1 text-sm font-extrabold text-slate-800">{formatCurrency(details.totalPayment)}</p></div><div><p className="text-xs font-bold text-slate-500">Primer pago estimado</p><p className="mt-1 text-sm font-extrabold text-slate-800">{details.firstPaymentDate}</p></div><div><p className="text-xs font-bold text-slate-500">Destino</p><p className="mt-1 text-sm font-extrabold text-slate-800">{detailLoan.destination || "No registrado"}</p></div><div><p className="text-xs font-bold text-slate-500">Observaciones</p><p className="mt-1 text-sm font-extrabold text-slate-800">{detailLoan.observations || "Sin observaciones"}</p></div></div><div className="flex justify-end border-t border-slate-200 pt-4"><Button onClick={() => setDetailLoan(null)} variant="secondary">Cerrar</Button></div></div>; })()}
+      </Modal>
+
+      <Modal isOpen={Boolean(historyLoan)} onClose={() => setHistoryLoan(null)} size="md" title={`Historial ${historyLoan?.number ?? ""}`}>
+        <div className="space-y-4">{(loanHistories[historyLoan?.number] ?? []).map((entry, index) => <div className="flex gap-3" key={`${entry.description}-${index}`}><span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-blue-600" /><div><p className="text-sm font-extrabold text-slate-800">{entry.description}</p><p className="mt-1 text-sm font-medium text-slate-500">{`${entry.date} · ${entry.user}`}</p></div></div>)}<div className="flex justify-end border-t border-slate-200 pt-4"><Button onClick={() => setHistoryLoan(null)} variant="secondary">Cerrar</Button></div></div>
+      </Modal>
+
+      <Modal isOpen={Boolean(paymentLoan)} onClose={() => setPaymentLoan(null)} size="sm" title={`Registrar pago ${paymentLoan?.number ?? ""}`}>
+        <form className="space-y-5" onSubmit={registerPayment}><p className="text-sm font-medium text-slate-500">Registra un pago simulado para {paymentLoan?.associate}.</p><label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Valor del pago</span><Input min="1" onChange={(event) => setPaymentAmount(event.target.value)} placeholder="0" required type="number" value={paymentAmount} /></label><div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={() => setPaymentLoan(null)} variant="secondary">Cancelar</Button><Button type="submit">Registrar pago</Button></div></form>
+      </Modal>
+
+      <Modal isOpen={Boolean(cancelLoan)} onClose={() => setCancelLoan(null)} size="sm" title="Cancelar préstamo">
+        <div className="space-y-5"><p className="text-sm font-medium text-slate-600">¿Confirmas la cancelación del préstamo <span className="font-extrabold text-slate-900">{cancelLoan?.number}</span>? Esta acción actualizará su estado.</p><div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={() => setCancelLoan(null)} variant="secondary">Volver</Button><Button onClick={confirmCancelLoan}>Cancelar préstamo</Button></div></div>
       </Modal>
 
       <ToastProvider />

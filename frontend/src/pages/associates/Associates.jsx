@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, FileWarning, Pencil, Plus, ShieldCheck, UserCheck, UserRound, Users } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
@@ -8,6 +8,7 @@ import CatalogSelect from "../../components/ui/CatalogSelect";
 import DataSection from "../../components/ui/DataSection";
 import EmptyState from "../../components/ui/EmptyState";
 import Input from "../../components/ui/Input";
+import LocationSelector from "../../components/ui/LocationSelector";
 import Modal from "../../components/ui/Modal";
 import PageContainer from "../../components/ui/PageContainer";
 import PageHeader from "../../components/ui/PageHeader";
@@ -15,7 +16,7 @@ import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
 import { notifySuccess } from "../../components/ui/toastNotifications";
-import { associateStatusOptions, associateTypeOptions, cityOptions, initialAssociates } from "../../mock/associates";
+import { associateStatusOptions, associateTypeOptions, initialAssociates } from "../../mock/associates";
 
 const statusVariant = {
   Activo: "success",
@@ -47,7 +48,7 @@ export default function Associates() {
   const [nextId, setNextId] = useState(initialAssociates.length + 1);
   const pageSize = 10;
 
-  const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm({
+  const { register, handleSubmit, reset, formState: { errors }, setValue, control, clearErrors } = useForm({
     defaultValues: {
       code: "",
       documentType: "",
@@ -69,6 +70,13 @@ export default function Associates() {
     },
   });
   const documentTypeField = register("documentType", { required: "Selecciona el tipo de documento" });
+  const selectedDepartment = useWatch({ control, name: "department" });
+  const selectedCity = useWatch({ control, name: "city" });
+
+  useEffect(() => {
+    register("department", { required: "Selecciona el departamento" });
+    register("city", { required: "Selecciona el municipio" });
+  }, [register]);
 
   const filteredAssociates = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -90,6 +98,7 @@ export default function Associates() {
 
   const totalPages = Math.max(1, Math.ceil(filteredAssociates.length / pageSize));
   const pagedAssociates = useMemo(() => filteredAssociates.slice((page - 1) * pageSize, page * pageSize), [filteredAssociates, page]);
+  const availableCities = useMemo(() => [...new Set(associates.map((associate) => associate.city).filter(Boolean))].sort((first, second) => first.localeCompare(second, "es-CO")), [associates]);
 
   const summaryCards = useMemo(() => [
     { title: "Total asociados", value: associates.length.toString(), subtitle: "Registrados en la cooperativa", icon: <Users size={28} />, color: "bg-blue-50 text-blue-600" },
@@ -292,7 +301,7 @@ export default function Associates() {
             <span className="mb-2 block text-sm font-bold text-slate-700">Ciudad</span>
             <select aria-label="Filtrar por ciudad" className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" id="associate-city" onChange={(event) => handleFilterChange(event, "city")} value={cityFilter}>
               <option value="Todos">Todas</option>
-              {cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}
+              {availableCities.map((city) => <option key={city} value={city}>{city}</option>)}
             </select>
           </label>
           <label className="block" htmlFor="associate-sort">
@@ -355,8 +364,7 @@ export default function Associates() {
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Teléfono</span><Input {...register("phone")} placeholder="Teléfono" /></label>
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Correo electrónico</span><Input {...register("email", { required: "Ingresa el correo electrónico" })} placeholder="correo@ejemplo.com" type="email" />{errors.email && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.email.message}</p>}</label>
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Dirección</span><Input {...register("address", { required: "Ingresa la dirección" })} placeholder="Dirección" />{errors.address && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.address.message}</p>}</label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Ciudad</span><select {...register("city", { required: "Selecciona la ciudad" })} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100"><option value="">Selecciona una opción</option>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select>{errors.city && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.city.message}</p>}</label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Departamento</span><Input {...register("department", { required: "Ingresa el departamento" })} placeholder="Departamento" />{errors.department && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.department.message}</p>}</label>
+            <LocationSelector city={selectedCity} cityError={errors.city?.message} department={selectedDepartment} departmentError={errors.department?.message} idPrefix="associate" onCityChange={(event) => setValue("city", event.target.value, { shouldValidate: true })} onDepartmentChange={(event) => { setValue("department", event.target.value, { shouldValidate: true }); setValue("city", ""); clearErrors("city"); }} />
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Fecha de afiliación</span><Input {...register("entryDate", { required: "Selecciona la fecha de afiliación" })} type="date" />{errors.entryDate && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.entryDate.message}</p>}</label>
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Tipo de asociado</span><select {...register("type", { required: "Selecciona el tipo de asociado" })} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100"><option value="">Selecciona una opción</option>{associateTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select>{errors.type && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.type.message}</p>}</label>
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Estado</span><select {...register("status", { required: "Selecciona el estado" })} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100"><option value="">Selecciona una opción</option>{associateStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select>{errors.status && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.status.message}</p>}</label>
