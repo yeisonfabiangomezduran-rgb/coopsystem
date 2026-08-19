@@ -13,7 +13,8 @@ public interface LoanInstallmentRepository
     List<LoanInstallment> findByLoanIdOrderByInstallmentNumberAsc(
             Long loanId);
 
-    Optional<LoanInstallment> findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
+    Optional<LoanInstallment>
+    findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
             Long loanId,
             InstallmentStatus status);
 

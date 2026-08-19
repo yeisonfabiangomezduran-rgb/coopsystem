@@ -9,4 +9,12 @@ public interface AssociateRepository extends JpaRepository<Associate, Long> {
 
     boolean existsByEmailAndIdNot(String email, Long id);
 
+    boolean existsByCode(String code);
+
+    boolean existsByCodeAndIdNot(String code, Long id);
+
+    boolean existsByDocumentNumber(String documentNumber);
+
+    boolean existsByDocumentNumberAndIdNot(String documentNumber, Long id);
+
 }

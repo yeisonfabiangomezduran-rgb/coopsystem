@@ -4,6 +4,7 @@ import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.modules.savings.dto.CreateSavingsAccountRequest;
 import com.coopsystem.modules.savings.dto.SavingsAccountResponse;
+import com.coopsystem.modules.savings.dto.UpdateSavingsAccountStatusRequest;
 import com.coopsystem.modules.savings.entity.AccountStatus;
 import com.coopsystem.modules.savings.entity.SavingsAccount;
 import com.coopsystem.modules.savings.repository.SavingsAccountRepository;
@@ -82,6 +83,20 @@ public class SavingsAccountService {
         SavingsAccount saved = savingsAccountRepository.save(account);
 
         return toResponse(saved);
+    }
+
+    @Transactional
+    public SavingsAccountResponse updateStatus(
+            Long id,
+            UpdateSavingsAccountStatusRequest request) {
+
+        SavingsAccount account = savingsAccountRepository.findById(id)
+                .orElseThrow(() ->
+                        new BusinessException("La cuenta de ahorro no existe"));
+
+        account.setStatus(request.getStatus());
+
+        return toResponse(savingsAccountRepository.save(account));
     }
 
     /**

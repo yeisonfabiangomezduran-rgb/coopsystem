@@ -36,6 +36,17 @@ public class LoanInstallment {
     @Column(name = "remaining_balance", nullable = false, precision = 18, scale = 2)
     private BigDecimal remainingBalance;
 
+    /**
+     * Valor acumulado que se ha pagado de esta cuota.
+     */
+    @Column(
+            name = "paid_amount",
+            nullable = false,
+            precision = 18,
+            scale = 2
+    )
+    private BigDecimal paidAmount = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private InstallmentStatus status;
@@ -106,6 +117,14 @@ public class LoanInstallment {
         this.remainingBalance = remainingBalance;
     }
 
+    public BigDecimal getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
     public InstallmentStatus getStatus() {
         return status;
     }
@@ -120,5 +139,18 @@ public class LoanInstallment {
 
     public void setPaidAt(LocalDateTime paidAt) {
         this.paidAt = paidAt;
+    }
+
+    /**
+     * Calcula cuánto falta para completar esta cuota.
+     */
+    @Transient
+    public BigDecimal getPendingAmount() {
+
+        BigDecimal paid = paidAmount != null
+                ? paidAmount
+                : BigDecimal.ZERO;
+
+        return totalPayment.subtract(paid).max(BigDecimal.ZERO);
     }
 }

@@ -1,13 +1,20 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { CircleDollarSign, Landmark, Plus, WalletCards } from "lucide-react";
-import ActionMenu from "../../components/ui/ActionMenu";
+import {
+  CircleDollarSign,
+  Eye,
+  Landmark,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react";
+
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import DataSection from "../../components/ui/DataSection";
 import EmptyState from "../../components/ui/EmptyState";
 import FilterBar from "../../components/ui/FilterBar";
-import Input from "../../components/ui/Input";
 import Loader from "../../components/ui/Loader";
 import Modal from "../../components/ui/Modal";
 import PageContainer from "../../components/ui/PageContainer";
@@ -15,61 +22,194 @@ import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
-import { notifySuccess } from "../../components/ui/toastNotifications";
-import { initialAssociates } from "../../mock/associates";
+import { notifyError, notifySuccess } from "../../components/ui/toastNotifications";
+import associateService from "../../services/associateService";
+import {
+  createSavingsAccount,
+  getSavingsAccountById,
+  getSavingsAccounts,
+  updateSavingsAccountStatus,
+} from "../../services/savingsService";
 
-const LoanChart = lazy(() => import("../dashboard/LoanChart"));
-const savingTrend = [{ mes: "Ene", ahorro: 920 }, { mes: "Feb", ahorro: 990 }, { mes: "Mar", ahorro: 1060 }, { mes: "Abr", ahorro: 1120 }, { mes: "May", ahorro: 1210 }, { mes: "Jun", ahorro: 1280 }];
-const initialSavingsAccounts = [
-  { code: "AHO-0019", associate: "Edgar Peñalosa Hernández", type: "Ahorro programado", balance: 2500000, status: "Activa", openedAt: "02 may. 2026", openedDate: "2026-05-02", observations: "" },
-  { code: "AHO-0020", associate: "María Camila Ulloa", type: "Ahorro a la vista", balance: 8750000, status: "Activa", openedAt: "30 abr. 2026", openedDate: "2026-04-30", observations: "" },
-  { code: "AHO-0021", associate: "José Manuel Veltrán", type: "Ahorro programado", balance: 1250000, status: "Bloqueada", openedAt: "28 abr. 2026", openedDate: "2026-04-28", observations: "" },
-  { code: "AHO-0022", associate: "Comercializadora Andina S.A.S.", type: "Ahorro empresarial", balance: 14200000, status: "Activa", openedAt: "26 abr. 2026", openedDate: "2026-04-26", observations: "" },
-  { code: "AHO-0023", associate: "Liliana Rodríguez Mora", type: "Ahorro a la vista", balance: 680000, status: "Inactiva", openedAt: "19 abr. 2026", openedDate: "2026-04-19", observations: "" },
-];
-const savingTypes = ["Ahorro a la vista", "Ahorro programado", "Ahorro empresarial"];
-const savingStatuses = ["Activa", "Inactiva", "Bloqueada"];
+const statusLabels = {
+  ACTIVE: "Activa",
+  BLOCKED: "Bloqueada",
+  CLOSED: "Cerrada",
+};
+
+const statusVariant = {
+  Activa: "success",
+  Bloqueada: "warning",
+  Cerrada: "neutral",
+};
+
+const accountStatuses = ["ACTIVE", "BLOCKED", "CLOSED"];
+
 const savingFilters = [
-  { id: "type", label: "Tipo de ahorro", ariaLabel: "Filtrar por tipo de ahorro", options: ["Todos", ...savingTypes] },
-  { id: "status", label: "Estado", ariaLabel: "Filtrar por estado", options: ["Todos", ...savingStatuses] },
+  {
+    id: "status",
+    label: "Estado",
+    ariaLabel: "Filtrar por estado",
+    options: ["Todos", "Activa", "Bloqueada", "Cerrada"],
+  },
 ];
-const statusVariant = { Activa: "success", Inactiva: "neutral", Bloqueada: "warning" };
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value).replace("COP", "$ ");
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  })
+    .format(Number(value || 0))
+    .replace("COP", "$ ");
 }
 
 function formatOpeningDate(value) {
-  return new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`)).replace(/\./g, "");
+  if (!value) return "No disponible";
+
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+    .format(new Date(value))
+    .replace(/\./g, "");
 }
 
-function getCurrentDate() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function getAssociateName(associate) {
+  return [associate.firstName, associate.lastName].filter(Boolean).join(" ");
+}
+
+function mapAccount(account, associatesById) {
+  return {
+    id: account.id,
+    code: account.accountNumber,
+    associateId: account.associateId,
+    associate: associatesById.get(account.associateId) || "Asociado no disponible",
+    balance: account.balance,
+    statusCode: account.status,
+    status: statusLabels[account.status] || account.status,
+    openedAt: formatOpeningDate(account.openedAt),
+    openedAtRaw: account.openedAt,
+  };
+}
+
+function getErrorMessage(error, fallback) {
+  const status = error.response?.status;
+
+  if (status === 400) return "La solicitud contiene datos inválidos.";
+  if (status === 401) return "Tu sesión no es válida. Inicia sesión nuevamente.";
+  if (status === 403) return "No tienes permisos para realizar esta acción.";
+  if (status === 404) return "La cuenta de ahorro no existe o fue eliminada.";
+  if (status === 409) return "No fue posible completar la operación por un conflicto de datos.";
+  if (status === 500) return "El servidor no pudo completar la operación. Inténtalo más tarde.";
+
+  return fallback;
 }
 
 export default function Savings() {
-  const [savingsAccounts, setSavingsAccounts] = useState(initialSavingsAccounts);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [savingsAccounts, setSavingsAccounts] = useState([]);
+  const [associates, setAssociates] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isUnavailableActionOpen, setIsUnavailableActionOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
-  const [pendingStatus, setPendingStatus] = useState(null);
-  const [nextId, setNextId] = useState(() => Math.max(...initialSavingsAccounts.map((account) => Number(account.code.split("-")[1])), 0) + 1);
-  const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm({
-    defaultValues: { associate: "", type: "", balance: "", observations: "" },
-  });
+  const [statusToUpdate, setStatusToUpdate] = useState("");
+  const [isStatusSubmitting, setIsStatusSubmitting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
 
-  const associateOptions = useMemo(
-    () => initialAssociates.map((associate) => `${associate.firstName} ${associate.lastName}`),
-    [],
-  );
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm({ defaultValues: { associateId: "" } });
+
+  const loadSavingsData = useCallback(async () => {
+    setLoadError("");
+    setIsLoading(true);
+
+    try {
+      const [accounts, associateList] = await Promise.all([
+        getSavingsAccounts(),
+        associateService.getAll(),
+      ]);
+      const associatesById = new Map(
+        associateList.map((associate) => [associate.id, getAssociateName(associate)])
+      );
+
+      setAssociates(associateList);
+      setSavingsAccounts(accounts.map((account) => mapAccount(account, associatesById)));
+    } catch (error) {
+      console.error("Error cargando cuentas de ahorro:", error);
+      const message = getErrorMessage(error, "No fue posible cargar las cuentas de ahorro. Inténtalo de nuevo.");
+      setLoadError(message);
+      notifyError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const [accounts, associateList] = await Promise.all([
+          getSavingsAccounts(),
+          associateService.getAll(),
+        ]);
+        const associatesById = new Map(
+          associateList.map((associate) => [associate.id, getAssociateName(associate)])
+        );
+
+        if (mounted) {
+          setAssociates(associateList);
+          setSavingsAccounts(accounts.map((account) => mapAccount(account, associatesById)));
+        }
+      } catch (error) {
+        console.error("Error cargando cuentas de ahorro:", error);
+        if (mounted) {
+          const message = getErrorMessage(error, "No fue posible cargar las cuentas de ahorro. Inténtalo de nuevo.");
+          setLoadError(message);
+          notifyError(message);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const filteredAccounts = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase("es-CO");
+
+    return savingsAccounts.filter((account) => {
+      const matchesSearch = !normalizedSearch || [account.code, account.associate]
+        .some((value) => value.toLocaleLowerCase("es-CO").includes(normalizedSearch));
+      return matchesSearch && (statusFilter === "Todos" || account.status === statusFilter);
+    });
+  }, [savingsAccounts, search, statusFilter]);
 
   const summaryCards = useMemo(() => {
     const activeAccounts = savingsAccounts.filter((account) => account.status === "Activa");
-    const totalBalance = savingsAccounts.reduce((total, account) => total + account.balance, 0);
+    const totalBalance = savingsAccounts.reduce(
+      (total, account) => total + Number(account.balance || 0),
+      0
+    );
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const openingsThisMonth = savingsAccounts.filter((account) => account.openedDate.startsWith(currentMonth)).length;
+    const openingsThisMonth = savingsAccounts.filter(
+      (account) => account.openedAtRaw?.slice(0, 7) === currentMonth
+    ).length;
 
     return [
       { title: "Total cuentas", value: savingsAccounts.length.toString(), subtitle: "Registradas en la cooperativa", icon: <WalletCards size={28} />, color: "bg-blue-50 text-blue-600" },
@@ -80,161 +220,228 @@ export default function Savings() {
   }, [savingsAccounts]);
 
   function openCreateModal() {
-    reset({ associate: "", type: "", balance: "", observations: "" });
-    setSelectedAccount(null);
-    setIsModalOpen(true);
+    reset({ associateId: "" });
+    setIsCreateOpen(true);
   }
 
-  function openEditModal(account) {
-    setSelectedAccount(account);
-    setValue("associate", account.associate);
-    setValue("type", account.type);
-    setValue("balance", account.balance);
-    setValue("observations", account.observations);
-    setIsModalOpen(true);
-  }
-
-  function openDetailModal(account) {
-    setSelectedAccount(account);
-    setIsDetailOpen(true);
-  }
-
-  function openConfirmStatusModal(account) {
-    setSelectedAccount(account);
-    setPendingStatus(account.status === "Activa" ? "Inactiva" : "Activa");
-    setIsConfirmOpen(true);
-  }
-
-  function handleCloseModal() {
+  function closeCreateModal() {
     reset();
-    setIsModalOpen(false);
-    setSelectedAccount(null);
+    setIsCreateOpen(false);
   }
 
-  function handleCloseDetail() {
+  async function getAccountWithAssociate(id) {
+    const account = await getSavingsAccountById(id);
+    let associate = associates.find(
+      (currentAssociate) => currentAssociate.id === account.associateId
+    );
+
+    if (!associate) {
+      associate = await associateService.getById(account.associateId);
+    }
+
+    return mapAccount(
+      account,
+      new Map([[associate.id, getAssociateName(associate)]])
+    );
+  }
+
+  async function handleView(id) {
+    try {
+      const account = await getAccountWithAssociate(id);
+      setSelectedAccount(account);
+      setIsDetailOpen(true);
+    } catch (error) {
+      console.error("Error consultando cuenta de ahorro:", error);
+      notifyError(getErrorMessage(error, "No fue posible consultar la cuenta de ahorro."));
+    }
+  }
+
+  function handleEdit(id) {
+    const account = savingsAccounts.find((currentAccount) => currentAccount.id === id);
+    setSelectedAccount(account || null);
+    setIsUnavailableActionOpen(true);
+  }
+
+  async function handleStatus(id) {
+    try {
+      const account = await getAccountWithAssociate(id);
+      setSelectedAccount(account);
+      setStatusToUpdate(account.statusCode);
+      setIsStatusOpen(true);
+    } catch (error) {
+      console.error("Error consultando cuenta de ahorro:", error);
+      notifyError(getErrorMessage(error, "No fue posible consultar la cuenta de ahorro."));
+    }
+  }
+
+  async function submitStatusUpdate() {
+    if (!selectedAccount || !statusToUpdate) return;
+
+    try {
+      setIsStatusSubmitting(true);
+      await updateSavingsAccountStatus(selectedAccount.id, statusToUpdate);
+      setIsStatusOpen(false);
+      setSelectedAccount(null);
+      setStatusToUpdate("");
+      notifySuccess("Estado de la cuenta actualizado correctamente.");
+      await loadSavingsData();
+    } catch (error) {
+      console.error("Error actualizando estado de la cuenta:", error);
+      notifyError(getErrorMessage(error, "No fue posible actualizar el estado de la cuenta."));
+    } finally {
+      setIsStatusSubmitting(false);
+    }
+  }
+
+  function closeSelectedModal() {
     setIsDetailOpen(false);
+    setIsStatusOpen(false);
+    setIsUnavailableActionOpen(false);
     setSelectedAccount(null);
+    setStatusToUpdate("");
   }
 
-  function handleCloseConfirm() {
-    setIsConfirmOpen(false);
-    setSelectedAccount(null);
-    setPendingStatus(null);
+  async function onSubmit({ associateId }) {
+    try {
+      await createSavingsAccount({ associateId: Number(associateId) });
+      closeCreateModal();
+      notifySuccess("Cuenta de ahorro creada correctamente.");
+      await loadSavingsData();
+    } catch (error) {
+      console.error("Error creando cuenta de ahorro:", error);
+      notifyError(getErrorMessage(error, "No fue posible crear la cuenta de ahorro."));
+    }
   }
 
-  function handleActionMenuClick(event, account) {
-    const button = event.target.closest("button");
-    if (!button) return;
-
-    if (button.title === "Ver") openDetailModal(account);
-    if (button.title === "Editar") openEditModal(account);
-    if (button.title === "Más opciones") openConfirmStatusModal(account);
-  }
-
-  function onSubmit(data) {
-    const openedDate = selectedAccount ? selectedAccount.openedDate : getCurrentDate();
-    const account = {
-      code: selectedAccount?.code ?? `AHO-${String(nextId).padStart(4, "0")}`,
-      associate: data.associate,
-      type: data.type,
-      balance: Number(data.balance),
-      status: selectedAccount?.status ?? "Activa",
-      openedAt: selectedAccount?.openedAt ?? formatOpeningDate(openedDate),
-      openedDate,
-      observations: data.observations.trim(),
-    };
-
-    setSavingsAccounts((current) => selectedAccount ? current.map((currentAccount) => currentAccount.code === selectedAccount.code ? account : currentAccount) : [account, ...current]);
-    if (!selectedAccount) setNextId((currentId) => currentId + 1);
-    reset();
-    setIsModalOpen(false);
-    setSelectedAccount(null);
-    notifySuccess(selectedAccount ? "Cuenta de ahorro actualizada correctamente." : "Cuenta de ahorro creada correctamente.");
-  }
-
-  function changeStatus() {
-    if (!selectedAccount) return;
-    setSavingsAccounts((current) => current.map((account) => account.code === selectedAccount.code ? { ...account, status: pendingStatus } : account));
-    handleCloseConfirm();
-    notifySuccess("Estado de la cuenta actualizado correctamente.");
+  function clearFilters() {
+    setSearch("");
+    setStatusFilter("Todos");
   }
 
   return (
     <>
       <PageContainer>
-        <PageHeader eyebrow="Gestión de ahorros" title="Ahorros" subtitle="Gestiona las cuentas de ahorro y consulta su comportamiento." action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva cuenta</Button>} />
+        <PageHeader
+          eyebrow="Gestión de ahorros"
+          title="Ahorros"
+          subtitle="Gestiona las cuentas de ahorro y consulta su comportamiento."
+          action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva cuenta</Button>}
+        />
+
         <SummaryCards items={summaryCards} />
-        <DataSection className="p-6" description="Evolución del saldo total durante los últimos seis meses." headerClassName="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between" title="Comportamiento del ahorro" titleClassName="text-lg font-extrabold tracking-tight text-slate-900" action={<div className="rounded-full bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-700">+$360 M acumulados</div>}><div className="mt-5"><Suspense fallback={<Loader label="Cargando evolución..." />}><LoanChart data={savingTrend} dataKey="ahorro" gradientId="savings-volume" label="Ahorro total" valueSuffix="millones" /></Suspense></div></DataSection>
-        <FilterBar filters={savingFilters} gridClassName="xl:grid-cols-[minmax(0,1.8fr)_minmax(12rem,0.8fr)_minmax(11rem,0.7fr)_auto]" idPrefix="savings" />
-        <DataSection className="overflow-hidden p-0" description={`${savingsAccounts.length} cuentas registradas.`} headerClassName="border-b border-slate-200 px-6 py-5" title="Cuentas de ahorro">
-          {savingsAccounts.length === 0 ? <EmptyState icon={<WalletCards size={24} />} title="Aún no hay cuentas de ahorro" description="Cuando registres una cuenta, su información aparecerá en este listado." action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva cuenta</Button>} /> : (
+
+        <DataSection
+          className="p-6"
+          description="El backend actual no expone histórico de saldos para construir esta gráfica."
+          title="Comportamiento del ahorro"
+          titleClassName="text-lg font-extrabold tracking-tight text-slate-900"
+        >
+          <EmptyState
+            icon={<CircleDollarSign size={24} />}
+            title="Histórico no disponible"
+            description="Los totales mostrados arriba se calculan con las cuentas registradas actualmente."
+          />
+        </DataSection>
+
+        <FilterBar
+          filters={savingFilters}
+          gridClassName="xl:grid-cols-[minmax(0,1.8fr)_minmax(11rem,0.7fr)_auto]"
+          idPrefix="savings"
+          onChange={(id, value) => setStatusFilter(value)}
+          onReset={clearFilters}
+          onSearchChange={setSearch}
+          searchAriaLabel="Buscar cuenta o asociado"
+          searchLabel="Buscar cuenta o asociado"
+          searchPlaceholder="Número de cuenta o asociado"
+          values={{ status: statusFilter }}
+          searchValue={search}
+        />
+
+        <DataSection
+          className="overflow-hidden p-0"
+          description={`${savingsAccounts.length} cuentas registradas.`}
+          headerClassName="border-b border-slate-200 px-6 py-5"
+          title="Cuentas de ahorro"
+        >
+          {isLoading ? <Loader label="Cargando cuentas de ahorro..." /> : loadError ? (
+            <EmptyState icon={<WalletCards size={24} />} title="No fue posible cargar las cuentas" description={loadError} action={<Button onClick={loadSavingsData}>Reintentar</Button>} />
+          ) : savingsAccounts.length === 0 ? (
+            <EmptyState icon={<WalletCards size={24} />} title="No hay cuentas de ahorro registradas." description="Cuando registres una cuenta, su información aparecerá en este listado." action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva cuenta</Button>} />
+          ) : filteredAccounts.length === 0 ? (
+            <EmptyState icon={<WalletCards size={24} />} title="No hay cuentas para mostrar" description="Ajusta los filtros para ver las cuentas registradas." />
+          ) : (
             <Table className="min-w-275">
-              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-4">Código</th><th className="px-6 py-4">Asociado</th><th className="px-6 py-4">Producto</th><th className="px-6 py-4">Saldo</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Fecha apertura</th><th className="px-6 py-4 text-right">Acciones</th></tr></thead>
-              <tbody className="divide-y divide-slate-200">{savingsAccounts.map((account) => <tr className="transition hover:bg-slate-50/70" key={account.code}><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{account.code}</td><td className="px-6 py-4 text-sm font-bold text-slate-800">{account.associate}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{account.type}</td><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{formatCurrency(account.balance)}</td><td className="px-6 py-4"><Badge variant={statusVariant[account.status]}>{account.status}</Badge></td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{account.openedAt}</td><td className="px-6 py-4"><div onClick={(event) => handleActionMenuClick(event, account)}><ActionMenu label={account.code} /></div></td></tr>)}</tbody>
+              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-4">Código</th><th className="px-6 py-4">Asociado</th><th className="px-6 py-4">Saldo</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Fecha apertura</th><th className="px-6 py-4 text-right">Acciones</th></tr></thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredAccounts.map((account) => (
+                  <tr className="transition hover:bg-slate-50/70" key={account.id}>
+                    <td className="px-6 py-4 text-sm font-extrabold text-slate-800">{account.code}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-slate-800">{account.associate}</td>
+                    <td className="px-6 py-4 text-sm font-extrabold text-slate-800">{formatCurrency(account.balance)}</td>
+                    <td className="px-6 py-4"><Badge variant={statusVariant[account.status] || "neutral"}>{account.status}</Badge></td>
+                    <td className="px-6 py-4 text-sm font-semibold text-slate-600">{account.openedAt}</td>
+                    <td className="px-6 py-4"><div className="flex justify-end gap-1">
+                      <Button aria-label={`Ver ${account.code}`} onClick={() => handleView(account.id)} size="icon" title="Ver" variant="ghost"><Eye size={18} /></Button>
+                      <Button aria-label={`Editar ${account.code}`} onClick={() => handleEdit(account.id)} size="icon" title="Editar" variant="ghost"><Pencil size={17} /></Button>
+                      <Button aria-label={`Cambiar estado de ${account.code}`} onClick={() => handleStatus(account.id)} size="icon" title="Cambiar estado" variant="ghost"><ShieldCheck size={18} /></Button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
             </Table>
           )}
         </DataSection>
       </PageContainer>
 
-      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="md" title={selectedAccount ? "Editar cuenta de ahorro" : "Nueva cuenta de ahorro"}>
+      <Modal isOpen={isCreateOpen} onClose={closeCreateModal} size="md" title="Nueva cuenta de ahorro">
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 block text-sm font-bold text-slate-700">Asociado</span>
-              <select {...register("associate", { required: "El asociado es obligatorio" })} aria-invalid={errors.associate ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100">
-                <option value="">Selecciona un asociado</option>
-                {associateOptions.map((associate) => <option key={associate} value={associate}>{associate}</option>)}
-              </select>
-              {errors.associate && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.associate.message}</p>}
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-bold text-slate-700">Tipo de ahorro</span>
-              <select {...register("type", { required: "El tipo de ahorro es obligatorio" })} aria-invalid={errors.type ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100">
-                <option value="">Selecciona un tipo</option>
-                {savingTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-              </select>
-              {errors.type && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.type.message}</p>}
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-bold text-slate-700">Depósito inicial</span>
-              <Input {...register("balance", { required: "El depósito inicial es obligatorio", min: { value: 0, message: "El depósito no puede ser negativo" } })} aria-invalid={errors.balance ? "true" : "false"} min="0" placeholder="0" type="number" />
-              {errors.balance && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.balance.message}</p>}
-            </label>
-          </div>
-          <label className="block">
-            <span className="mb-2 block text-sm font-bold text-slate-700">Observaciones</span>
-            <textarea {...register("observations")} className="min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-3 focus:ring-blue-100" placeholder="Registra las observaciones de la cuenta" />
+          <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Asociado</span>
+            <select {...register("associateId", { required: "El asociado es obligatorio" })} aria-invalid={errors.associateId ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100">
+              <option value="">Selecciona un asociado</option>
+              {associates.map((associate) => <option key={associate.id} value={associate.id}>{getAssociateName(associate)}</option>)}
+            </select>
+            {errors.associateId && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.associateId.message}</p>}
           </label>
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-            <Button onClick={handleCloseModal} type="button" variant="secondary">Cancelar</Button>
-            <Button type="submit">Guardar</Button>
-          </div>
+          <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-600">El número de cuenta, saldo inicial, estado y fecha de apertura son generados por el backend.</p>
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={closeCreateModal} type="button" variant="secondary">Cancelar</Button><Button disabled={isSubmitting} type="submit">{isSubmitting ? "Guardando..." : "Guardar"}</Button></div>
         </form>
       </Modal>
 
-      <Modal isOpen={isDetailOpen} onClose={handleCloseDetail} size="md" title="Detalle de cuenta de ahorro">
-        {selectedAccount && (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-lg font-extrabold text-slate-900">{selectedAccount.associate}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">{selectedAccount.code}</p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Tipo de ahorro</p><p className="mt-1 text-sm font-semibold text-slate-800">{selectedAccount.type}</p></div>
-              <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Saldo</p><p className="mt-1 text-sm font-semibold text-slate-800">{formatCurrency(selectedAccount.balance)}</p></div>
-              <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Estado</p><p className="mt-1 text-sm font-semibold text-slate-800">{selectedAccount.status}</p></div>
-              <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Fecha de apertura</p><p className="mt-1 text-sm font-semibold text-slate-800">{selectedAccount.openedAt}</p></div>
-            </div>
-            {selectedAccount.observations && <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Observaciones</p><p className="mt-1 text-sm font-semibold text-slate-800">{selectedAccount.observations}</p></div>}
+      <Modal isOpen={isDetailOpen} onClose={closeSelectedModal} size="md" title="Detalle de cuenta de ahorro">
+        {selectedAccount && <div className="space-y-4">
+          <div className="rounded-2xl bg-slate-50 p-4"><p className="text-lg font-extrabold text-slate-900">{selectedAccount.associate}</p><p className="mt-1 text-sm font-semibold text-slate-500">{selectedAccount.code}</p></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <DetailItem label="Número de cuenta" value={selectedAccount.code} />
+            <DetailItem label="ID del asociado" value={selectedAccount.associateId} />
+            <DetailItem label="Saldo" value={formatCurrency(selectedAccount.balance)} />
+            <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">Estado</p><div className="mt-1"><Badge variant={statusVariant[selectedAccount.status] || "neutral"}>{selectedAccount.status}</Badge></div></div>
+            <DetailItem label="Fecha de apertura" value={selectedAccount.openedAt} />
           </div>
-        )}
+          <div className="flex justify-end border-t border-slate-200 pt-4"><Button onClick={closeSelectedModal} type="button" variant="secondary">Cerrar</Button></div>
+        </div>}
       </Modal>
 
-      <Modal isOpen={isConfirmOpen} onClose={handleCloseConfirm} size="sm" title="Cambiar estado">
-        {selectedAccount && <div className="space-y-4"><p className="text-sm font-semibold text-slate-600">¿Deseas cambiar el estado de la cuenta <span className="font-extrabold text-slate-900">{selectedAccount.code}</span> a <span className="font-extrabold text-slate-900">{pendingStatus}</span>?</p><div className="flex justify-end gap-3"><Button onClick={handleCloseConfirm} type="button" variant="secondary">Cancelar</Button><Button onClick={changeStatus} type="button">Confirmar</Button></div></div>}
+      <Modal isOpen={isUnavailableActionOpen} onClose={closeSelectedModal} size="sm" title="Acción no disponible">
+        {selectedAccount && <div className="space-y-4"><p className="text-sm font-semibold text-slate-600">La edición de cuentas de ahorro todavía no está disponible en el backend.</p><div className="flex justify-end"><Button onClick={closeSelectedModal} type="button" variant="secondary">Cerrar</Button></div></div>}
+      </Modal>
+
+      <Modal isOpen={isStatusOpen} onClose={closeSelectedModal} size="sm" title="Cambiar estado">
+        {selectedAccount && <div className="space-y-4">
+          <p className="text-sm font-semibold text-slate-600">¿Desea cambiar el estado de la cuenta <span className="font-extrabold text-slate-900">{selectedAccount.code}</span>?</p>
+          <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Nuevo estado</span>
+            <select className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" onChange={(event) => setStatusToUpdate(event.target.value)} value={statusToUpdate}>
+              {accountStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
+            </select>
+          </label>
+          <div className="flex justify-end gap-3"><Button onClick={closeSelectedModal} type="button" variant="secondary">Cancelar</Button><Button disabled={isStatusSubmitting} onClick={submitStatusUpdate} type="button">{isStatusSubmitting ? "Guardando..." : "Confirmar"}</Button></div>
+        </div>}
       </Modal>
 
       <ToastProvider />
     </>
   );
+}
+
+function DetailItem({ label, value }) {
+  return <div className="rounded-xl border border-slate-200 p-4"><p className="text-sm font-bold text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold text-slate-800">{value}</p></div>;
 }

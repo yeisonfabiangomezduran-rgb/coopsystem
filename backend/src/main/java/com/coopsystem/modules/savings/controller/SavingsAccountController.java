@@ -2,6 +2,7 @@ package com.coopsystem.modules.savings.controller;
 
 import com.coopsystem.modules.savings.dto.CreateSavingsAccountRequest;
 import com.coopsystem.modules.savings.dto.SavingsAccountResponse;
+import com.coopsystem.modules.savings.dto.UpdateSavingsAccountStatusRequest;
 import com.coopsystem.modules.savings.service.SavingsAccountService;
 import com.coopsystem.shared.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -62,6 +63,17 @@ public class SavingsAccountController {
         return ApiResponse.success(
                 "Cuenta de ahorro creada correctamente",
                 response
+        );
+    }
+
+    @PatchMapping("/{id}/status")
+    public ApiResponse<SavingsAccountResponse> updateStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateSavingsAccountStatusRequest request) {
+
+        return ApiResponse.success(
+                "Estado de la cuenta de ahorro actualizado correctamente",
+                savingsAccountService.updateStatus(id, request)
         );
     }
 }

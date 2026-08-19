@@ -4,6 +4,7 @@ import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.modules.savings.dto.CreateSavingsAccountRequest;
 import com.coopsystem.modules.savings.dto.SavingsAccountResponse;
+import com.coopsystem.modules.savings.dto.UpdateSavingsAccountStatusRequest;
 import com.coopsystem.modules.savings.entity.AccountStatus;
 import com.coopsystem.modules.savings.entity.SavingsAccount;
 import com.coopsystem.modules.savings.repository.SavingsAccountRepository;
@@ -138,6 +139,36 @@ class SavingsAccountServiceTest {
 
         verify(savingsAccountRepository)
                 .findByAccountNumber("100000001");
+    }
+
+    @Test
+    void shouldUpdateAccountStatusSuccessfully() {
+
+        Associate associate = new Associate();
+        ReflectionHelper.setId(associate, 1L);
+
+        SavingsAccount account = new SavingsAccount();
+        ReflectionHelper.setId(account, 1L);
+        account.setAssociate(associate);
+        account.setAccountNumber("100000001");
+        account.setBalance(BigDecimal.ZERO);
+        account.setStatus(AccountStatus.ACTIVE);
+        account.setOpenedAt(LocalDateTime.now());
+
+        UpdateSavingsAccountStatusRequest request =
+                new UpdateSavingsAccountStatusRequest();
+        request.setStatus(AccountStatus.BLOCKED);
+
+        when(savingsAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+        when(savingsAccountRepository.save(account))
+                .thenReturn(account);
+
+        SavingsAccountResponse response =
+                savingsAccountService.updateStatus(1L, request);
+
+        assertEquals("BLOCKED", response.getStatus());
+        verify(savingsAccountRepository).save(account);
     }
 
         @Test

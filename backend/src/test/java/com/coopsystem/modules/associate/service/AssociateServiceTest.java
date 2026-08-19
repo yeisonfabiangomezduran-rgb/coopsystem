@@ -80,6 +80,14 @@ class AssociateServiceTest {
                 "juan@test.com",
                 response.getEmail());
 
+        assertEquals(
+                "ASO-0001",
+                response.getCode());
+
+        assertEquals(
+                "10000001",
+                response.getDocumentNumber());
+
         verify(associateRepository)
                 .findById(1L);
     }

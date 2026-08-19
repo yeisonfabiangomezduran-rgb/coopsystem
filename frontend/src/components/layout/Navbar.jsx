@@ -1,6 +1,10 @@
 import { Landmark, LogOut } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Navbar() {
+  const { logout, user } = useAuth();
+  const username = user?.username ?? "Usuario";
+
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-28 max-w-[1440px] items-center px-4 sm:px-6 lg:px-8">
@@ -25,13 +29,13 @@ export default function Navbar() {
         <div className="flex flex-1 justify-end">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden text-right sm:block">
-              <p className="font-bold text-slate-900">Administrador</p>
-              <button className="mt-1 flex items-center gap-1 text-sm font-semibold text-rose-500 transition hover:text-rose-600">
+              <p className="font-bold text-slate-900">{username}</p>
+              <button className="mt-1 flex items-center gap-1 text-sm font-semibold text-rose-500 transition hover:text-rose-600" onClick={logout} type="button">
                 <LogOut size={15} /> Cerrar sesión
               </button>
             </div>
             <div className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 text-lg font-bold text-white shadow-sm">
-              A
+              {username.charAt(0).toUpperCase()}
             </div>
           </div>
         </div>

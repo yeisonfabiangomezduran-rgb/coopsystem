@@ -1,0 +1,2 @@
+ALTER TABLE loan_installments
+ADD COLUMN paid_amount NUMERIC(18, 2) NOT NULL DEFAULT 0.00;

@@ -59,6 +59,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             UserDetails userDetails =
                     userDetailsService.loadUserByUsername(username);
 
+                    System.out.println("====================================");
+                System.out.println("Authorities del UserDetails: " + userDetails.getAuthorities());
+
             System.out.println("Usuario BD: " + userDetails.getUsername());
 
             if (jwtService.isTokenValid(token, userDetails.getUsername())) {
@@ -79,6 +82,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 SecurityContextHolder.getContext()
                         .setAuthentication(authentication);
+
+                        System.out.println("Authentication: " + SecurityContextHolder.getContext().getAuthentication());
+                System.out.println("Authorities autenticadas: " +
+                
+        SecurityContextHolder.getContext().getAuthentication().getAuthorities());
 
                 System.out.println("AUTENTICACIÓN ESTABLECIDA");
             } else {

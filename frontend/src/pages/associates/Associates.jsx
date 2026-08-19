@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Eye, FileWarning, Pencil, Plus, ShieldCheck, UserCheck, UserRound, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, FileWarning, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserRound, Users } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -15,8 +15,11 @@ import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
-import { notifySuccess } from "../../components/ui/toastNotifications";
-import { associateStatusOptions, associateTypeOptions, initialAssociates } from "../../mock/associates";
+import { notifyError, notifySuccess } from "../../components/ui/toastNotifications";
+import associateService from "../../services/associateService";
+
+const associateStatusOptions = ["Activo", "Inactivo", "Suspendido"];
+const associateTypeOptions = ["Persona natural", "Persona jurídica"];
 
 const statusVariant = {
   Activo: "success",
@@ -31,11 +34,24 @@ const sortOptions = [
   { value: "status", label: "Estado" },
 ];
 
+function getErrorMessage(error) {
+  if (!error.response) {
+    return "No fue posible conectar con el servidor.";
+  }
+
+  if (error.response.status >= 500) {
+    return "El servidor presentó un error. Inténtalo nuevamente.";
+  }
+
+  return error.response.data?.errors?.[0] ?? error.response.data?.message ?? "No fue posible completar la operación.";
+}
+
 export default function Associates() {
-  const [associates, setAssociates] = useState(initialAssociates);
+  const [associates, setAssociates] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedAssociate, setSelectedAssociate] = useState(null);
   const [pendingStatus, setPendingStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -45,12 +61,10 @@ export default function Associates() {
   const [cityFilter, setCityFilter] = useState("Todos");
   const [sortBy, setSortBy] = useState("code");
   const [page, setPage] = useState(1);
-  const [nextId, setNextId] = useState(initialAssociates.length + 1);
   const pageSize = 10;
 
   const { register, handleSubmit, reset, formState: { errors }, setValue, control, clearErrors } = useForm({
     defaultValues: {
-      code: "",
       documentType: "",
       documentNumber: "",
       firstName: "",
@@ -78,11 +92,31 @@ export default function Associates() {
     register("city", { required: "Selecciona el municipio" });
   }, [register]);
 
+  const loadAssociates = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await associateService.getAll();
+      setAssociates(response);
+    } catch (error) {
+      notifyError(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function loadInitialAssociates() {
+      await loadAssociates();
+    }
+
+    loadInitialAssociates();
+  }, [loadAssociates]);
+
   const filteredAssociates = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return associates
       .filter((associate) => {
-        const matchesSearch = !normalizedSearch || [associate.code, associate.documentNumber, associate.firstName, associate.lastName, associate.email].some((value) => value.toLowerCase().includes(normalizedSearch));
+        const matchesSearch = !normalizedSearch || [associate.code, associate.documentNumber, associate.firstName, associate.lastName, associate.email].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch));
         const matchesStatus = statusFilter === "Todos" || associate.status === statusFilter;
         const matchesType = typeFilter === "Todos" || associate.type === typeFilter;
         const matchesCity = cityFilter === "Todos" || associate.city === cityFilter;
@@ -103,13 +137,12 @@ export default function Associates() {
   const summaryCards = useMemo(() => [
     { title: "Total asociados", value: associates.length.toString(), subtitle: "Registrados en la cooperativa", icon: <Users size={28} />, color: "bg-blue-50 text-blue-600" },
     { title: "Asociados activos", value: associates.filter((associate) => associate.status === "Activo").length.toString(), subtitle: "92% del total registrado", icon: <UserCheck size={28} />, color: "bg-emerald-50 text-emerald-600" },
-    { title: "Nuevos este mes", value: associates.filter((associate) => associate.entryDate >= "2026-07-01").length.toString(), subtitle: "Registrados recientemente", icon: <UserRound size={28} />, color: "bg-violet-50 text-violet-600" },
+    { title: "Nuevos este mes", value: associates.filter((associate) => associate.entryDate?.startsWith(new Date().toISOString().slice(0, 7))).length.toString(), subtitle: "Registrados recientemente", icon: <UserRound size={28} />, color: "bg-violet-50 text-violet-600" },
     { title: "Documentación pendiente", value: associates.filter((associate) => associate.status === "Suspendido").length.toString(), subtitle: "Requieren revisión", icon: <FileWarning size={28} />, color: "bg-amber-50 text-amber-600" },
   ], [associates]);
 
   function openCreateModal() {
     reset({
-      code: "",
       documentType: "",
       documentNumber: "",
       firstName: "",
@@ -133,7 +166,6 @@ export default function Associates() {
 
   function openEditModal(associate) {
     setSelectedAssociate(associate);
-    setValue("code", associate.code);
     setValue("documentType", associate.documentType);
     setValue("documentNumber", associate.documentNumber);
     setValue("firstName", associate.firstName);
@@ -164,6 +196,11 @@ export default function Associates() {
     setIsConfirmOpen(true);
   }
 
+  function openDeleteConfirmModal(associate) {
+    setSelectedAssociate(associate);
+    setIsDeleteConfirmOpen(true);
+  }
+
   function handleCloseModal() {
     setIsModalOpen(false);
     setSelectedAssociate(null);
@@ -180,12 +217,13 @@ export default function Associates() {
     setPendingStatus(null);
   }
 
+  function handleCloseDeleteConfirm() {
+    setIsDeleteConfirmOpen(false);
+    setSelectedAssociate(null);
+  }
+
   async function onSubmit(data) {
-    setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
     const payload = {
-      id: selectedAssociate?.id ?? nextId,
-      code: selectedAssociate?.code ?? `ASO-${String(nextId).padStart(4, "0")}`,
       documentType: data.documentType,
       documentNumber: data.documentNumber.trim(),
       firstName: data.firstName.trim(),
@@ -204,30 +242,60 @@ export default function Associates() {
       observations: data.observations.trim(),
     };
 
-    setAssociates((current) => {
+    try {
+      setLoading(true);
+
       if (selectedAssociate) {
-        return current.map((associate) => (associate.id === selectedAssociate.id ? payload : associate));
+        await associateService.update(selectedAssociate.id, { ...payload, code: selectedAssociate.code });
+        notifySuccess("Asociado actualizado correctamente.");
+      } else {
+        await associateService.create(payload);
+        notifySuccess("Asociado creado correctamente.");
       }
-      setNextId((currentId) => currentId + 1);
-      return [payload, ...current];
-    });
-    setLoading(false);
-    handleCloseModal();
-    notifySuccess(selectedAssociate ? "Asociado actualizado." : "Asociado creado.");
+
+      handleCloseModal();
+      await loadAssociates();
+    } catch (error) {
+      notifyError(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function changeStatus() {
     if (!selectedAssociate) return;
-    setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    setAssociates((current) => current.map((associate) => associate.id === selectedAssociate.id ? { ...associate, status: pendingStatus } : associate));
-    setLoading(false);
-    handleCloseConfirm();
-    notifySuccess("Estado cambiado.");
+    try {
+      setLoading(true);
+      await associateService.update(selectedAssociate.id, { ...selectedAssociate, status: pendingStatus });
+      handleCloseConfirm();
+      notifySuccess("Estado actualizado correctamente.");
+      await loadAssociates();
+    } catch (error) {
+      notifyError(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteAssociate() {
+    if (!selectedAssociate) return;
+
+    try {
+      setLoading(true);
+      await associateService.delete(selectedAssociate.id);
+      handleCloseDeleteConfirm();
+      notifySuccess("Asociado eliminado correctamente.");
+      await loadAssociates();
+    } catch (error) {
+      notifyError(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleSearchChange(event) {
     setSearch(event.target.value);
+    setPage(1);
   }
 
   function handleFilterChange(event, filterKey) {
@@ -235,6 +303,7 @@ export default function Associates() {
     if (filterKey === "status") setStatusFilter(value);
     if (filterKey === "type") setTypeFilter(value);
     if (filterKey === "city") setCityFilter(value);
+    setPage(1);
   }
 
   function clearFilters() {
@@ -243,6 +312,7 @@ export default function Associates() {
     setTypeFilter("Todos");
     setCityFilter("Todos");
     setSortBy("code");
+    setPage(1);
   }
 
   return (
@@ -256,7 +326,7 @@ export default function Associates() {
               <h2 className="text-lg font-extrabold tracking-tight text-slate-900">Estado del portafolio de asociados</h2>
               <p className="mt-1 text-sm font-medium text-slate-500">Resumen operativo de afiliación y seguimientos pendientes.</p>
             </div>
-            <div className="rounded-full bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-700">Última sincronización · 10:30 a. m.</div>
+            <div className="rounded-full bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-700">Información sincronizada con el servidor</div>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl bg-slate-50 p-4">
@@ -306,7 +376,7 @@ export default function Associates() {
           </label>
           <label className="block" htmlFor="associate-sort">
             <span className="mb-2 block text-sm font-bold text-slate-700">Ordenar por</span>
-            <select aria-label="Ordenar asociados" className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" id="associate-sort" onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
+            <select aria-label="Ordenar asociados" className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" id="associate-sort" onChange={(event) => { setSortBy(event.target.value); setPage(1); }} value={sortBy}>
               {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
@@ -340,7 +410,7 @@ export default function Associates() {
                     <td className="px-6 py-4 text-sm font-semibold text-slate-600">{associate.type}</td>
                     <td className="px-6 py-4"><Badge variant={statusVariant[associate.status]}>{associate.status}</Badge></td>
                     <td className="px-6 py-4 text-sm font-semibold text-slate-600">{associate.entryDate}</td>
-                    <td className="px-6 py-4"><div className="flex justify-end gap-1"><Button aria-label={`Ver ${associate.code}`} onClick={() => openDetailModal(associate)} size="icon" title="Ver detalle" variant="ghost"><Eye size={17} /></Button><Button aria-label={`Editar ${associate.code}`} onClick={() => openEditModal(associate)} size="icon" title="Editar" variant="ghost"><Pencil size={17} /></Button><Button aria-label={`Cambiar estado de ${associate.code}`} onClick={() => openConfirmStatusModal(associate)} size="icon" title="Cambiar estado" variant="ghost"><ShieldCheck size={17} /></Button></div></td>
+                    <td className="px-6 py-4"><div className="flex justify-end gap-1"><Button aria-label={`Ver ${associate.code}`} onClick={() => openDetailModal(associate)} size="icon" title="Ver detalle" variant="ghost"><Eye size={17} /></Button><Button aria-label={`Editar ${associate.code}`} onClick={() => openEditModal(associate)} size="icon" title="Editar" variant="ghost"><Pencil size={17} /></Button><Button aria-label={`Cambiar estado de ${associate.code}`} onClick={() => openConfirmStatusModal(associate)} size="icon" title="Cambiar estado" variant="ghost"><ShieldCheck size={17} /></Button><Button aria-label={`Eliminar ${associate.code}`} onClick={() => openDeleteConfirmModal(associate)} size="icon" title="Eliminar" variant="ghost"><Trash2 size={17} /></Button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -380,6 +450,10 @@ export default function Associates() {
 
       <Modal isOpen={isConfirmOpen} onClose={handleCloseConfirm} title="Cambiar estado">
         <div className="space-y-5"><p className="text-sm font-medium text-slate-600">{`¿Deseas cambiar el estado de ${selectedAssociate?.firstName ?? "este asociado"} a ${pendingStatus ?? ""}?`}</p><div className="flex justify-end gap-3"><Button onClick={handleCloseConfirm} variant="secondary">Cancelar</Button><Button disabled={loading} onClick={changeStatus}>{loading ? "Actualizando..." : "Confirmar"}</Button></div></div>
+      </Modal>
+
+      <Modal isOpen={isDeleteConfirmOpen} onClose={handleCloseDeleteConfirm} title="Eliminar asociado">
+        <div className="space-y-5"><p className="text-sm font-medium text-slate-600">{`¿Deseas eliminar a ${selectedAssociate?.firstName ?? "este asociado"}? Esta acción no se puede deshacer.`}</p><div className="flex justify-end gap-3"><Button onClick={handleCloseDeleteConfirm} variant="secondary">Cancelar</Button><Button disabled={loading} onClick={deleteAssociate}>{loading ? "Eliminando..." : "Eliminar"}</Button></div></div>
       </Modal>
 
       <ToastProvider />

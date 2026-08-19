@@ -1,219 +1,1181 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { ArrowDownLeft, ArrowUpRight, CircleDollarSign, Plus, ReceiptText } from "lucide-react";
-import AssociateSearch from "../../components/ui/AssociateSearch";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CircleDollarSign,
+  Plus,
+  ReceiptText,
+} from "lucide-react";
+
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import DataSection from "../../components/ui/DataSection";
 import EmptyState from "../../components/ui/EmptyState";
 import Input from "../../components/ui/Input";
+import Loader from "../../components/ui/Loader";
 import Modal from "../../components/ui/Modal";
 import PageContainer from "../../components/ui/PageContainer";
 import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
-import { notifySuccess } from "../../components/ui/toastNotifications";
-import transactionTypes from "../../data/catalogs/transactionTypes";
-import { initialAssociates } from "../../mock/associates";
+import {
+  notifyError,
+  notifySuccess,
+} from "../../components/ui/toastNotifications";
 
-const initialTransactions = [
-  { number: "TRX-0019", date: "2026-07-20", time: "10:24 a. m.", type: "Pago de cuota", associateCode: "ASO-0019", associate: "Edgar Peñalosa Hernández", document: "1.019.243.765", account: "PRE-0042", amount: 850000, status: "Completada", user: "Laura Gómez", direction: "income" },
-  { number: "TRX-0020", date: "2026-07-20", time: "09:48 a. m.", type: "Desembolso de préstamo", associateCode: "ASO-0020", associate: "María Camila Ulloa", document: "1.024.981.376", account: "AHO-0020", amount: 8000000, status: "Pendiente", user: "Carlos Ruiz", direction: "expense" },
-  { number: "TRX-0021", date: "2026-07-20", time: "09:12 a. m.", type: "Consignación", associateCode: "ASO-0021", associate: "José Manuel Veltrán", document: "79.852.911", account: "AHO-0021", amount: 500000, status: "Completada", user: "Laura Gómez", direction: "income" },
-  { number: "TRX-0022", date: "2026-07-19", time: "04:16 p. m.", type: "Retiro", associateCode: "ASO-0023", associate: "Liliana Rodríguez Mora", document: "52.184.067", account: "AHO-0023", amount: 275000, status: "Anulada", user: "Carlos Ruiz", direction: "expense" },
-  { number: "TRX-0023", date: "2026-07-19", time: "11:02 a. m.", type: "Ajuste", associateCode: "ASO-0022", associate: "Comercializadora Andina S.A.S.", document: "901.625.184-7", account: "AHO-0022", amount: 1250000, status: "Completada", user: "Laura Gómez", direction: "income" },
-];
+import associateService from "../../services/associateService";
+import { getSavingsAccounts } from "../../services/savingsService";
+import {
+  deposit,
+  getTransactionsByAccount,
+  withdraw,
+} from "../../services/transactionService";
 
-const accountOptions = {
-  "ASO-0019": ["AHO-0019", "PRE-0042"],
-  "ASO-0020": ["AHO-0020", "PRE-0020"],
-  "ASO-0021": ["AHO-0021", "PRE-0021"],
-  "ASO-0022": ["AHO-0022", "PRE-0022"],
-  "ASO-0023": ["AHO-0023", "PRE-0023"],
-  "ASO-0024": ["AHO-0024", "PRE-0024"],
+
+// ======================================================
+// TIPOS DE TRANSACCIÓN
+// ======================================================
+
+const transactionLabels = {
+  DEPOSIT: "Consignación",
+  WITHDRAW: "Retiro",
+  TRANSFER: "Transferencia",
+  LOAN_DISBURSEMENT: "Desembolso de préstamo",
 };
 
-const statusVariant = { Completada: "success", Pendiente: "warning", Anulada: "neutral" };
+
+// ======================================================
+// FORMATO DE MONEDA
+// ======================================================
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value).replace("COP", "$ ");
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  })
+    .format(Number(value || 0))
+    .replace("COP", "$ ");
 }
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`)).replace(/\./g, "");
+
+// ======================================================
+// FORMATO DE FECHA
+// ======================================================
+
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
-function getToday() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+// ======================================================
+// MANEJO DE ERRORES
+// ======================================================
+
+function getErrorMessage(error, fallback) {
+  const response = error.response?.data;
+
+  return (
+    response?.errors?.[0] ||
+    response?.message ||
+    error.message ||
+    fallback
+  );
 }
 
-function getTime() {
-  return new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit" }).format(new Date());
+
+// ======================================================
+// COMPARAR FECHAS
+// ======================================================
+
+function isSameDate(value, filter) {
+  return !filter || (value && value.slice(0, 10) === filter);
 }
 
-function directionFor(type) {
-  return ["Retiro", "Desembolso de préstamo"].includes(type) ? "expense" : "income";
-}
 
-function needsAssociate(type) {
-  return type !== "Desembolso de préstamo";
-}
-
-function needsAccount(type) {
-  return ["Consignación", "Retiro", "Desembolso de préstamo", "Ajuste"].includes(type);
-}
-
-function needsLoan(type) {
-  return ["Pago de cuota", "Desembolso de préstamo"].includes(type);
-}
+// ======================================================
+// COMPONENTE
+// ======================================================
 
 export default function Transactions() {
-  const [transactions, setTransactions] = useState(initialTransactions);
+  // ====================================================
+  // ESTADOS
+  // ====================================================
+
+  const [accounts, setAccounts] = useState([]);
+  const [associates, setAssociates] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedAssociate, setSelectedAssociate] = useState(null);
-  const [associateError, setAssociateError] = useState("");
+
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("Todos");
-  const [statusFilter, setStatusFilter] = useState("Todos");
-  const [associateFilter, setAssociateFilter] = useState("Todos");
-  const [nextNumber, setNextNumber] = useState(() => Math.max(...initialTransactions.map((transaction) => Number(transaction.number.slice(4)))) + 1);
-  const { control, register, handleSubmit, reset, setValue, formState: { errors } } = useForm({ defaultValues: { type: "", account: "", loan: "", amount: "", observations: "" } });
-  const selectedType = useWatch({ control, name: "type" });
+  const [accountFilter, setAccountFilter] = useState("Todos");
+
+
+  // ====================================================
+  // FORMULARIO
+  // ====================================================
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm({
+    defaultValues: {
+      type: "",
+      savingsAccountId: "",
+      amount: "",
+    },
+  });
+
+  const selectedType = useWatch({
+    control,
+    name: "type",
+  });
+
+
+  // ====================================================
+  // MAPA DE ASOCIADOS
+  // ====================================================
+
+  const associateById = useMemo(
+    () =>
+      new Map(
+        associates.map((associate) => [
+          associate.id,
+          associate,
+        ])
+      ),
+    [associates]
+  );
+
+
+  // ====================================================
+  // MAPA DE CUENTAS
+  // ====================================================
+
+  const accountById = useMemo(
+    () =>
+      new Map(
+        accounts.map((account) => [
+          account.id,
+          account,
+        ])
+      ),
+    [accounts]
+  );
+
+
+  // ====================================================
+  // CARGAR CUENTAS
+  // ====================================================
+
+  const loadAccounts = useCallback(async () => {
+    const response = await getSavingsAccounts();
+
+    setAccounts(response || []);
+
+    return response || [];
+  }, []);
+
+
+  // ====================================================
+  // CARGAR TRANSACCIONES
+  // ====================================================
+
+  const loadTransactions = useCallback(
+    async (accountsToLoad) => {
+      const histories = await Promise.all(
+        accountsToLoad.map(async (account) => {
+          const history = await getTransactionsByAccount(
+            account.id
+          );
+
+          return (history || []).map(
+            (transaction, index) => ({
+              ...transaction,
+
+              savingsAccountId: account.id,
+
+              accountNumber:
+                account.accountNumber,
+
+              rowKey:
+                `${account.id}-${transaction.transactionDate}-${transaction.transactionType}-${index}`,
+            })
+          );
+        })
+      );
+
+      setTransactions(
+        histories
+          .flat()
+          .sort(
+            (a, b) =>
+              new Date(b.transactionDate) -
+              new Date(a.transactionDate)
+          )
+      );
+    },
+    []
+  );
+
+
+  // ====================================================
+  // CARGAR TODA LA INFORMACIÓN
+  // ====================================================
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+
+    try {
+      const [loadedAccounts] = await Promise.all([
+        loadAccounts(),
+        associateService
+          .getAll()
+          .then(setAssociates),
+      ]);
+
+      await loadTransactions(loadedAccounts);
+    } catch (error) {
+      console.error(error);
+
+      notifyError(
+        getErrorMessage(
+          error,
+          "No fue posible cargar las transacciones."
+        )
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadAccounts, loadTransactions]);
+
+
+  // ====================================================
+  // CARGAR AL ABRIR LA PÁGINA
+  // ====================================================
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(
+      loadData,
+      0
+    );
+
+    return () =>
+      window.clearTimeout(loadTimer);
+  }, [loadData]);
+
+
+  // ====================================================
+  // AGREGAR NOMBRE DEL ASOCIADO
+  // ====================================================
+
+  const enrichedTransactions = useMemo(
+    () =>
+      transactions.map((transaction) => {
+        const account = accountById.get(
+          transaction.savingsAccountId
+        );
+
+        const associate = account
+          ? associateById.get(account.associateId)
+          : null;
+
+        return {
+          ...transaction,
+
+          associateName: associate
+            ? `${associate.firstName} ${associate.lastName}`
+            : "Asociado no disponible",
+        };
+      }),
+    [
+      accountById,
+      associateById,
+      transactions,
+    ]
+  );
+
+
+  // ====================================================
+  // FILTRAR TRANSACCIONES
+  // ====================================================
 
   const filteredTransactions = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase("es-CO");
-    return transactions.filter((transaction) => {
-      const matchesSearch = !normalizedSearch || [transaction.number, transaction.document, transaction.associate].some((value) => value.toLocaleLowerCase("es-CO").includes(normalizedSearch));
-      return matchesSearch
-        && (!dateFilter || transaction.date === dateFilter)
-        && (typeFilter === "Todos" || transaction.type === typeFilter)
-        && (statusFilter === "Todos" || transaction.status === statusFilter)
-        && (associateFilter === "Todos" || transaction.associateCode === associateFilter);
-    });
-  }, [associateFilter, dateFilter, search, statusFilter, transactions, typeFilter]);
+    const normalizedSearch =
+      search.trim().toLocaleLowerCase("es-CO");
+
+    return enrichedTransactions.filter(
+      (transaction) => {
+        const matchesSearch =
+          !normalizedSearch ||
+          [
+            transaction.accountNumber,
+            transaction.associateName,
+            transaction.transactionType,
+          ]
+            .filter(Boolean)
+            .some((value) =>
+              value
+                .toLocaleLowerCase("es-CO")
+                .includes(normalizedSearch)
+            );
+
+        return (
+          matchesSearch &&
+          isSameDate(
+            transaction.transactionDate,
+            dateFilter
+          ) &&
+          (typeFilter === "Todos" ||
+            transaction.transactionType ===
+              typeFilter) &&
+          (accountFilter === "Todos" ||
+            String(
+              transaction.savingsAccountId
+            ) === accountFilter)
+        );
+      }
+    );
+  }, [
+    accountFilter,
+    dateFilter,
+    enrichedTransactions,
+    search,
+    typeFilter,
+  ]);
+
+
+  // ====================================================
+  // TARJETAS RESUMEN
+  // ====================================================
 
   const summaryCards = useMemo(() => {
-    const today = getToday();
-    const todayTransactions = transactions.filter((transaction) => transaction.date === today && transaction.status === "Completada");
-    const incomes = todayTransactions.filter((transaction) => transaction.direction === "income").reduce((total, transaction) => total + transaction.amount, 0);
-    const expenses = todayTransactions.filter((transaction) => transaction.direction === "expense").reduce((total, transaction) => total + transaction.amount, 0);
+    const today = new Date()
+      .toISOString()
+      .slice(0, 10);
+
+    const todayTransactions =
+      transactions.filter(
+        (transaction) =>
+          isSameDate(
+            transaction.transactionDate,
+            today
+          )
+      );
+
+    const income =
+      todayTransactions
+        .filter((transaction) =>
+          [
+            "DEPOSIT",
+            "LOAN_DISBURSEMENT",
+          ].includes(
+            transaction.transactionType
+          )
+        )
+        .reduce(
+          (total, transaction) =>
+            total + Number(transaction.amount),
+          0
+        );
+
+    const expense =
+      todayTransactions
+        .filter(
+          (transaction) =>
+            transaction.transactionType ===
+            "WITHDRAW"
+        )
+        .reduce(
+          (total, transaction) =>
+            total + Number(transaction.amount),
+          0
+        );
+
     return [
-      { title: "Total de transacciones", value: transactions.length.toString(), subtitle: "Movimientos registrados", icon: <ReceiptText size={28} />, color: "bg-blue-50 text-blue-600" },
-      { title: "Ingresos del día", value: formatCurrency(incomes), subtitle: "Operaciones completadas hoy", icon: <ArrowUpRight size={28} />, color: "bg-emerald-50 text-emerald-600" },
-      { title: "Egresos del día", value: formatCurrency(expenses), subtitle: "Operaciones completadas hoy", icon: <ArrowDownLeft size={28} />, color: "bg-violet-50 text-violet-600" },
-      { title: "Saldo neto", value: formatCurrency(incomes - expenses), subtitle: "Resultado de la jornada", icon: <CircleDollarSign size={28} />, color: "bg-amber-50 text-amber-600" },
+      {
+        title: "Total de transacciones",
+        value: String(transactions.length),
+        subtitle: "Movimientos registrados",
+        icon: <ReceiptText size={28} />,
+        color:
+          "bg-blue-50 text-blue-600",
+      },
+
+      {
+        title: "Ingresos del día",
+        value: formatCurrency(income),
+        subtitle: "Movimientos de hoy",
+        icon: <ArrowUpRight size={28} />,
+        color:
+          "bg-emerald-50 text-emerald-600",
+      },
+
+      {
+        title: "Egresos del día",
+        value: formatCurrency(expense),
+        subtitle: "Movimientos de hoy",
+        icon: <ArrowDownLeft size={28} />,
+        color:
+          "bg-violet-50 text-violet-600",
+      },
+
+      {
+        title: "Saldo neto",
+        value: formatCurrency(
+          income - expense
+        ),
+        subtitle: "Resultado de la jornada",
+        icon: (
+          <CircleDollarSign size={28} />
+        ),
+        color:
+          "bg-amber-50 text-amber-600",
+      },
     ];
   }, [transactions]);
 
+
+  // ====================================================
+  // ABRIR MODAL
+  // ====================================================
+
   function openCreateModal() {
-    reset({ type: "", account: "", loan: "", amount: "", observations: "" });
-    setSelectedAssociate(null);
-    setAssociateError("");
+    reset({
+      type: "",
+      savingsAccountId: "",
+      amount: "",
+    });
+
     setIsModalOpen(true);
   }
 
+
+  // ====================================================
+  // CERRAR MODAL
+  // ====================================================
+
   function closeModal() {
-    reset();
-    setSelectedAssociate(null);
-    setAssociateError("");
-    setIsModalOpen(false);
+    if (!isSaving) {
+      setIsModalOpen(false);
+    }
   }
 
-  function handleTypeChange(event) {
-    setValue("type", event.target.value);
-    setValue("account", "");
-    setValue("loan", "");
-    setAssociateError("");
-    if (event.target.value === "Desembolso de préstamo") setSelectedAssociate(null);
+
+  // ====================================================
+  // GUARDAR TRANSACCIÓN
+  // ====================================================
+
+  async function onSubmit(data) {
+    const amount = Number(data.amount);
+
+    // Validaciones adicionales
+    if (!data.type) {
+      notifyError(
+        "Selecciona el tipo de transacción."
+      );
+      return;
+    }
+
+    if (!data.savingsAccountId) {
+      notifyError(
+        "Selecciona una cuenta de ahorro."
+      );
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notifyError(
+        "El monto debe ser mayor a cero."
+      );
+      return;
+    }
+
+    // Solo permitimos consignación y retiro
+    if (
+      data.type !== "DEPOSIT" &&
+      data.type !== "WITHDRAW"
+    ) {
+      notifyError(
+        "Tipo de transacción no válido."
+      );
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const operation =
+        data.type === "DEPOSIT"
+          ? deposit
+          : withdraw;
+
+      const response = await operation(
+        data.savingsAccountId,
+        amount
+      );
+
+      notifySuccess(
+        response?.message ||
+          (
+            data.type === "DEPOSIT"
+              ? "Consignación realizada correctamente."
+              : "Retiro realizado correctamente."
+          )
+      );
+
+      setIsModalOpen(false);
+
+      // Actualizar cuentas
+      const refreshedAccounts =
+        await loadAccounts();
+
+      // Actualizar movimientos
+      await loadTransactions(
+        refreshedAccounts
+      );
+
+      // Limpiar formulario
+      reset({
+        type: "",
+        savingsAccountId: "",
+        amount: "",
+      });
+
+    } catch (error) {
+      console.error(error);
+
+      notifyError(
+        getErrorMessage(
+          error,
+          "No fue posible realizar la operación."
+        )
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
+
+
+  // ====================================================
+  // LIMPIAR FILTROS
+  // ====================================================
 
   function clearFilters() {
     setSearch("");
     setDateFilter("");
     setTypeFilter("Todos");
-    setStatusFilter("Todos");
-    setAssociateFilter("Todos");
+    setAccountFilter("Todos");
   }
 
-  function onSubmit(data) {
-    const nowDate = getToday();
-    const associate = selectedAssociate;
-    if (needsAssociate(data.type) && !associate) {
-      setAssociateError("Selecciona un asociado para registrar la transacción.");
-      return;
-    }
-    const reference = data.loan || data.account || "Sin referencia";
-    const transaction = {
-      number: `TRX-${String(nextNumber).padStart(4, "0")}`,
-      date: nowDate,
-      time: getTime(),
-      type: data.type,
-      associateCode: associate?.code ?? "",
-      associate: associate ? `${associate.firstName} ${associate.lastName}` : "No aplica",
-      document: associate?.documentNumber ?? "No aplica",
-      account: reference,
-      amount: Number(data.amount || 0),
-      status: "Completada",
-      user: "Usuario actual",
-      direction: directionFor(data.type),
-      observations: data.observations?.trim() ?? "",
-    };
-    setTransactions((current) => [transaction, ...current]);
-    setNextNumber((current) => current + 1);
-    closeModal();
-    notifySuccess("Transacción registrada correctamente.");
-  }
 
-  const availableAccounts = selectedAssociate ? accountOptions[selectedAssociate.code]?.filter((reference) => reference.startsWith("AHO")) ?? [] : [];
-  const availableLoans = selectedAssociate ? accountOptions[selectedAssociate.code]?.filter((reference) => reference.startsWith("PRE")) ?? [] : ["PRE-0020", "PRE-0021", "PRE-0022", "PRE-0023", "PRE-0024"];
-  const requiresAssociate = needsAssociate(selectedType);
+  // ====================================================
+  // RENDER
+  // ====================================================
 
   return (
     <>
       <PageContainer>
-        <PageHeader action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva transacción</Button>} eyebrow="Gestión de transacciones" subtitle="Registra, consulta y controla los movimientos financieros de la cooperativa." title="Transacciones" />
-        <SummaryCards items={summaryCards} />
 
-        <DataSection className="p-5 sm:p-6" title="Filtros">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_minmax(10rem,.8fr)_minmax(10rem,.8fr)_minmax(10rem,.8fr)_minmax(12rem,.9fr)_auto] xl:items-end">
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Buscar transacción</span><Input aria-label="Buscar por número, documento o nombre" onChange={(event) => setSearch(event.target.value)} placeholder="Número, documento o nombre" value={search} /></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Fecha</span><Input aria-label="Filtrar por fecha" onChange={(event) => setDateFilter(event.target.value)} type="date" value={dateFilter} /></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Tipo</span><select className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" onChange={(event) => setTypeFilter(event.target.value)} value={typeFilter}><option>Todos</option>{transactionTypes.map((type) => <option key={type.value}>{type.label}</option>)}</select></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Estado</span><select className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}><option>Todos</option><option>Completada</option><option>Pendiente</option><option>Anulada</option></select></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Asociado</span><select className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" onChange={(event) => setAssociateFilter(event.target.value)} value={associateFilter}><option value="Todos">Todos</option>{initialAssociates.map((associate) => <option key={associate.code} value={associate.code}>{`${associate.firstName} ${associate.lastName}`}</option>)}</select></label>
-            <Button className="w-full xl:w-auto" onClick={clearFilters} variant="secondary">Limpiar filtros</Button>
+        {/* ============================================
+            ENCABEZADO
+        ============================================ */}
+
+        <PageHeader
+          action={
+            <Button
+              onClick={openCreateModal}
+            >
+              <Plus
+                size={18}
+                strokeWidth={2.5}
+              />
+
+              Nueva transacción
+            </Button>
+          }
+          eyebrow="Gestión de transacciones"
+          subtitle="Consulta los movimientos registrados en las cuentas de ahorro."
+          title="Transacciones"
+        />
+
+
+        {/* ============================================
+            TARJETAS RESUMEN
+        ============================================ */}
+
+        <SummaryCards
+          items={summaryCards}
+        />
+
+
+        {/* ============================================
+            FILTROS
+        ============================================ */}
+
+        <DataSection
+          className="p-5 sm:p-6"
+          title="Filtros"
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(10rem,.8fr)_minmax(10rem,.8fr)_minmax(12rem,.9fr)_auto] xl:items-end">
+
+            {/* BUSCAR */}
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Buscar
+              </span>
+
+              <Input
+                aria-label="Buscar por cuenta, asociado o tipo"
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Cuenta, asociado o tipo"
+                value={search}
+              />
+            </label>
+
+
+            {/* FECHA */}
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Fecha
+              </span>
+
+              <Input
+                aria-label="Filtrar por fecha"
+                onChange={(event) =>
+                  setDateFilter(
+                    event.target.value
+                  )
+                }
+                type="date"
+                value={dateFilter}
+              />
+            </label>
+
+
+            {/* TIPO */}
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Tipo
+              </span>
+
+              <select
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                onChange={(event) =>
+                  setTypeFilter(
+                    event.target.value
+                  )
+                }
+                value={typeFilter}
+              >
+                <option value="Todos">
+                  Todos
+                </option>
+
+                {Object.entries(
+                  transactionLabels
+                ).map(
+                  ([value, label]) => (
+                    <option
+                      key={value}
+                      value={value}
+                    >
+                      {label}
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
+
+
+            {/* CUENTA */}
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Cuenta
+              </span>
+
+              <select
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                onChange={(event) =>
+                  setAccountFilter(
+                    event.target.value
+                  )
+                }
+                value={accountFilter}
+              >
+                <option value="Todos">
+                  Todas
+                </option>
+
+                {accounts.map(
+                  (account) => {
+                    const associate =
+                      associateById.get(
+                        account.associateId
+                      );
+
+                    const associateName =
+                      associate
+                        ? `${associate.firstName} ${associate.lastName}`
+                        : "Asociado no disponible";
+
+                    return (
+                      <option
+                        key={account.id}
+                        value={account.id}
+                      >
+                        {associateName}
+                      </option>
+                    );
+                  }
+                )}
+              </select>
+            </label>
+
+
+            {/* LIMPIAR */}
+
+            <Button
+              className="w-full xl:w-auto"
+              onClick={clearFilters}
+              variant="secondary"
+            >
+              Limpiar filtros
+            </Button>
+
           </div>
         </DataSection>
 
-        <DataSection className="overflow-hidden p-0" description={`${filteredTransactions.length} transacciones encontradas.`} headerClassName="border-b border-slate-200 px-6 py-5" title="Historial de movimientos">
-          {filteredTransactions.length === 0 ? <EmptyState action={<Button onClick={openCreateModal}><Plus size={18} strokeWidth={2.5} />Nueva transacción</Button>} description="Ajusta los filtros o registra una nueva operación." icon={<ReceiptText size={24} />} title="No hay transacciones para mostrar" /> : (
-            <Table className="min-w-[1100px]"><thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-4">Número</th><th className="px-6 py-4">Fecha y hora</th><th className="px-6 py-4">Tipo</th><th className="px-6 py-4">Asociado</th><th className="px-6 py-4">Cuenta</th><th className="px-6 py-4">Valor</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Usuario</th></tr></thead><tbody className="divide-y divide-slate-200">{filteredTransactions.map((transaction) => <tr className="transition hover:bg-slate-50/70" key={transaction.number}><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{transaction.number}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{`${formatDate(transaction.date)} · ${transaction.time}`}</td><td className="px-6 py-4 text-sm font-bold text-slate-800">{transaction.type}</td><td className="px-6 py-4 text-sm font-bold text-slate-800">{transaction.associate}</td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{transaction.account}</td><td className="px-6 py-4 text-sm font-extrabold text-slate-800">{formatCurrency(transaction.amount)}</td><td className="px-6 py-4"><Badge variant={statusVariant[transaction.status]}>{transaction.status}</Badge></td><td className="px-6 py-4 text-sm font-semibold text-slate-600">{transaction.user}</td></tr>)}</tbody></Table>
+
+        {/* ============================================
+            HISTORIAL
+        ============================================ */}
+
+        <DataSection
+          className="overflow-hidden p-0"
+          description={`${filteredTransactions.length} transacciones encontradas.`}
+          headerClassName="border-b border-slate-200 px-6 py-5"
+          title="Historial de movimientos"
+        >
+
+          {isLoading ? (
+
+            <Loader
+              label="Cargando transacciones..."
+            />
+
+          ) : filteredTransactions.length ===
+            0 ? (
+
+            <EmptyState
+              action={
+                <Button
+                  onClick={openCreateModal}
+                >
+                  <Plus
+                    size={18}
+                    strokeWidth={2.5}
+                  />
+
+                  Nueva transacción
+                </Button>
+              }
+              description="Ajusta los filtros o registra una consignación o retiro."
+              icon={
+                <ReceiptText size={24} />
+              }
+              title="No hay transacciones para mostrar"
+            />
+
+          ) : (
+
+            <Table className="min-w-[950px]">
+
+              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+
+                <tr>
+
+                  <th className="px-6 py-4">
+                    Fecha y hora
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Tipo
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Asociado
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Cuenta
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Valor
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Saldo anterior
+                  </th>
+
+                  <th className="px-6 py-4">
+                    Saldo actual
+                  </th>
+
+                </tr>
+
+              </thead>
+
+
+              <tbody className="divide-y divide-slate-200">
+
+                {filteredTransactions.map(
+                  (transaction) => (
+
+                    <tr
+                      className="transition hover:bg-slate-50/70"
+                      key={transaction.rowKey}
+                    >
+
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                        {formatDateTime(
+                          transaction.transactionDate
+                        )}
+                      </td>
+
+
+                      <td className="px-6 py-4">
+
+                        <Badge
+                          variant={
+                            transaction.transactionType ===
+                            "WITHDRAW"
+                              ? "warning"
+                              : "success"
+                          }
+                        >
+                          {
+                            transactionLabels[
+                              transaction
+                                .transactionType
+                            ] ||
+                              transaction.transactionType
+                          }
+                        </Badge>
+
+                      </td>
+
+
+                      <td className="px-6 py-4 text-sm font-bold text-slate-800">
+                        {
+                          transaction.associateName
+                        }
+                      </td>
+
+
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                        {
+                          transaction.accountNumber
+                        }
+                      </td>
+
+
+                      <td className="px-6 py-4 text-sm font-extrabold text-slate-800">
+                        {formatCurrency(
+                          transaction.amount
+                        )}
+                      </td>
+
+
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                        {formatCurrency(
+                          transaction.previousBalance
+                        )}
+                      </td>
+
+
+                      <td className="px-6 py-4 text-sm font-extrabold text-slate-800">
+                        {formatCurrency(
+                          transaction.currentBalance
+                        )}
+                      </td>
+
+                    </tr>
+
+                  )
+                )}
+
+              </tbody>
+
+            </Table>
+
           )}
+
         </DataSection>
+
       </PageContainer>
 
-      <Modal isOpen={isModalOpen} onClose={closeModal} size="lg" title="Nueva transacción">
-        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
-          <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Tipo de transacción</span><select aria-invalid={errors.type ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" onChange={handleTypeChange} value={selectedType}><option value="">Selecciona un tipo</option>{transactionTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>{errors.type && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.type.message}</p>}<input type="hidden" {...register("type", { required: "Selecciona el tipo de transacción" })} /></label>
 
-          {selectedType && <>
-            {requiresAssociate && <AssociateSearch associates={initialAssociates} onClear={() => { setSelectedAssociate(null); setValue("account", ""); setValue("loan", ""); }} onSelect={(associate) => { setSelectedAssociate(associate); setAssociateError(""); }} searchInputId="transaction-associate-search" selectedAssociate={selectedAssociate} />}
-            {requiresAssociate && !selectedAssociate && <p className="text-sm font-semibold text-rose-600">{associateError || "Selecciona un asociado para continuar."}</p>}
-            <div className="grid gap-4 md:grid-cols-2">
-              {needsAccount(selectedType) && <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">{selectedType === "Desembolso de préstamo" ? "Cuenta destino" : "Cuenta"}</span><select {...register("account", { required: "Selecciona la cuenta" })} aria-invalid={errors.account ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" disabled={requiresAssociate && !selectedAssociate}><option value="">Selecciona una cuenta</option>{availableAccounts.map((account) => <option key={account}>{account}</option>)}</select>{errors.account && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.account.message}</p>}</label>}
-              {needsLoan(selectedType) && <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Préstamo</span><select {...register("loan", { required: "Selecciona el préstamo" })} aria-invalid={errors.loan ? "true" : "false"} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-3 focus:ring-blue-100" disabled={selectedType === "Pago de cuota" && !selectedAssociate}><option value="">Selecciona un préstamo</option>{availableLoans.map((loan) => <option key={loan}>{loan}</option>)}</select>{errors.loan && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.loan.message}</p>}</label>}
-              {selectedType !== "Desembolso de préstamo" && <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Valor</span><Input {...register("amount", { required: "Ingresa el valor", min: { value: 1, message: "El valor debe ser mayor a cero" } })} aria-invalid={errors.amount ? "true" : "false"} min="1" placeholder="0" type="number" />{errors.amount && <p className="mt-1 text-sm font-semibold text-rose-600">{errors.amount.message}</p>}</label>}
-            </div>
-            {["Consignación", "Retiro", "Ajuste"].includes(selectedType) && <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Observaciones</span><textarea {...register("observations")} className="min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-3 focus:ring-blue-100" placeholder="Registra las observaciones de la operación" /></label>}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-extrabold text-slate-900">Resumen de la operación</p><div className="mt-3 grid gap-2 text-sm font-semibold text-slate-600 sm:grid-cols-2"><p>Tipo: <span className="text-slate-800">{selectedType}</span></p><p>Estado: <span className="text-slate-800">Completada</span></p><p>Número: <span className="text-slate-800">{`TRX-${String(nextNumber).padStart(4, "0")}`}</span></p><p>Fecha y hora: <span className="text-slate-800">{`${formatDate(getToday())} · ${getTime()}`}</span></p><p>Usuario: <span className="text-slate-800">Usuario actual</span></p></div></div>
-          </>}
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4"><Button onClick={closeModal} type="button" variant="secondary">Cancelar</Button><Button type="submit">Guardar transacción</Button></div>
+      {/* ==============================================
+          MODAL NUEVA TRANSACCIÓN
+      ============================================== */}
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        size="lg"
+        title="Nueva transacción"
+      >
+
+        <form
+          className="space-y-5"
+          onSubmit={handleSubmit(
+            onSubmit
+          )}
+        >
+
+          {/* ========================================
+              TIPO + CUENTA
+          ======================================== */}
+
+          <div className="grid gap-4 md:grid-cols-2">
+
+            {/* TIPO DE TRANSACCIÓN */}
+
+            <label className="block">
+
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Tipo de transacción
+              </span>
+
+              <select
+                {...register("type", {
+                  required:
+                    "Selecciona un tipo de transacción",
+                })}
+                aria-invalid={
+                  errors.type
+                    ? "true"
+                    : "false"
+                }
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              >
+
+                <option value="">
+                  Selecciona un tipo
+                </option>
+
+                <option value="DEPOSIT">
+                  Consignación
+                </option>
+
+                <option value="WITHDRAW">
+                  Retiro
+                </option>
+
+              </select>
+
+
+              {errors.type && (
+                <p className="mt-1 text-sm font-semibold text-rose-600">
+                  {errors.type.message}
+                </p>
+              )}
+
+            </label>
+
+
+            {/* CUENTA DE AHORRO */}
+
+            <label className="block">
+
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Cuenta de ahorro
+              </span>
+
+              <select
+                {...register(
+                  "savingsAccountId",
+                  {
+                    required:
+                      "Selecciona una cuenta",
+                  }
+                )}
+                aria-invalid={
+                  errors.savingsAccountId
+                    ? "true"
+                    : "false"
+                }
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+              >
+
+                <option value="">
+                  Selecciona una cuenta
+                </option>
+
+
+                {accounts.map(
+                  (account) => {
+
+                    const associate =
+                      associateById.get(
+                        account.associateId
+                      );
+
+                    const associateName =
+                      associate
+                        ? `${associate.firstName} ${associate.lastName}`
+                        : "Asociado no disponible";
+
+
+                    return (
+                      <option
+                        key={account.id}
+                        value={account.id}
+                      >
+                        {`${associateName} · ${formatCurrency(
+                          account.balance
+                        )}`}
+                      </option>
+                    );
+
+                  }
+                )}
+
+              </select>
+
+
+              {errors.savingsAccountId && (
+                <p className="mt-1 text-sm font-semibold text-rose-600">
+                  {
+                    errors
+                      .savingsAccountId
+                      .message
+                  }
+                </p>
+              )}
+
+            </label>
+
+          </div>
+
+
+          {/* ========================================
+              MONTO
+          ======================================== */}
+
+          {selectedType && (
+
+            <label className="block">
+
+              <span className="mb-2 block text-sm font-bold text-slate-700">
+                Monto
+              </span>
+
+              <Input
+                {...register("amount", {
+                  required:
+                    "Ingresa el monto",
+
+                  min: {
+                    value: 0.01,
+                    message:
+                      "El monto debe ser mayor a cero",
+                  },
+                })}
+                aria-invalid={
+                  errors.amount
+                    ? "true"
+                    : "false"
+                }
+                min="0.01"
+                placeholder="0"
+                step="0.01"
+                type="number"
+              />
+
+
+              {errors.amount && (
+                <p className="mt-1 text-sm font-semibold text-rose-600">
+                  {
+                    errors.amount.message
+                  }
+                </p>
+              )}
+
+            </label>
+
+          )}
+
+
+          {/* ========================================
+              BOTONES
+          ======================================== */}
+
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+
+            <Button
+              disabled={isSaving}
+              onClick={closeModal}
+              type="button"
+              variant="secondary"
+            >
+              Cancelar
+            </Button>
+
+
+            <Button
+              disabled={isSaving}
+              type="submit"
+            >
+              {isSaving
+                ? "Guardando..."
+                : "Guardar transacción"}
+            </Button>
+
+          </div>
+
         </form>
+
       </Modal>
+
+
+      {/* ==============================================
+          TOASTS
+      ============================================== */}
+
       <ToastProvider />
+
     </>
   );
 }
