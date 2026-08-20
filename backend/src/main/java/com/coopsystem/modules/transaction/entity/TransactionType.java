@@ -6,8 +6,13 @@ package com.coopsystem.modules.transaction.entity;
 public enum TransactionType {
 
     DEPOSIT,
+
     WITHDRAW,
+
     TRANSFER,
-    LOAN_DISBURSEMENT
+
+    LOAN_DISBURSEMENT,
+
+    LOAN_PAYMENT
 
 }

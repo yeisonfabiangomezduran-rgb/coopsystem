@@ -38,13 +38,11 @@ public class LoanInstallment {
 
     /**
      * Valor acumulado que se ha pagado de esta cuota.
+     *
+     * Permite realizar pagos parciales y pagos superiores
+     * al valor de una cuota.
      */
-    @Column(
-            name = "paid_amount",
-            nullable = false,
-            precision = 18,
-            scale = 2
-    )
+    @Column(name = "paid_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
@@ -139,18 +137,5 @@ public class LoanInstallment {
 
     public void setPaidAt(LocalDateTime paidAt) {
         this.paidAt = paidAt;
-    }
-
-    /**
-     * Calcula cuánto falta para completar esta cuota.
-     */
-    @Transient
-    public BigDecimal getPendingAmount() {
-
-        BigDecimal paid = paidAmount != null
-                ? paidAmount
-                : BigDecimal.ZERO;
-
-        return totalPayment.subtract(paid).max(BigDecimal.ZERO);
     }
 }

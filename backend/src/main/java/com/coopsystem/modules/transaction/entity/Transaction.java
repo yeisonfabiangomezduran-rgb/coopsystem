@@ -1,5 +1,6 @@
 package com.coopsystem.modules.transaction.entity;
 
+import com.coopsystem.modules.loan.entity.Loan;
 import com.coopsystem.modules.savings.entity.SavingsAccount;
 import jakarta.persistence.*;
 
@@ -21,18 +22,45 @@ public class Transaction {
     @Column(nullable = false, precision = 18, scale = 2)
     private BigDecimal amount;
 
-    @Column(name = "previous_balance", nullable = false, precision = 18, scale = 2)
+    @Column(
+            name = "previous_balance",
+            nullable = false,
+            precision = 18,
+            scale = 2
+    )
     private BigDecimal previousBalance;
 
-    @Column(name = "current_balance", nullable = false, precision = 18, scale = 2)
+    @Column(
+            name = "current_balance",
+            nullable = false,
+            precision = 18,
+            scale = 2
+    )
     private BigDecimal currentBalance;
 
     @Column(name = "transaction_date", nullable = false)
     private LocalDateTime transactionDate;
 
+    /**
+     * Cuenta de ahorro asociada a la transacción.
+     *
+     * Puede ser null para transacciones que pertenecen
+     * exclusivamente a un préstamo, como LOAN_PAYMENT.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "savings_account_id", nullable = false)
+    @JoinColumn(name = "savings_account_id")
     private SavingsAccount savingsAccount;
+
+    /**
+     * Préstamo asociado a la transacción.
+     *
+     * Se utiliza principalmente para:
+     * - LOAN_DISBURSEMENT
+     * - LOAN_PAYMENT
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loan_id")
+    private Loan loan;
 
     public Transaction() {
     }
@@ -87,5 +115,13 @@ public class Transaction {
 
     public void setSavingsAccount(SavingsAccount savingsAccount) {
         this.savingsAccount = savingsAccount;
+    }
+
+    public Loan getLoan() {
+        return loan;
+    }
+
+    public void setLoan(Loan loan) {
+        this.loan = loan;
     }
 }

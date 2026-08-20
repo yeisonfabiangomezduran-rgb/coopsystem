@@ -18,6 +18,8 @@ public class LoanInstallmentResponse {
 
     private BigDecimal remainingBalance;
 
+    private BigDecimal paidAmount;
+
     private String status;
 
     private LocalDateTime paidAt;
@@ -32,6 +34,7 @@ public class LoanInstallmentResponse {
             BigDecimal interest,
             BigDecimal totalPayment,
             BigDecimal remainingBalance,
+            BigDecimal paidAmount,
             String status,
             LocalDateTime paidAt) {
 
@@ -41,6 +44,7 @@ public class LoanInstallmentResponse {
         this.interest = interest;
         this.totalPayment = totalPayment;
         this.remainingBalance = remainingBalance;
+        this.paidAmount = paidAmount;
         this.status = status;
         this.paidAt = paidAt;
     }
@@ -91,6 +95,14 @@ public class LoanInstallmentResponse {
 
     public void setRemainingBalance(BigDecimal remainingBalance) {
         this.remainingBalance = remainingBalance;
+    }
+
+    public BigDecimal getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(BigDecimal paidAmount) {
+        this.paidAmount = paidAmount;
     }
 
     public String getStatus() {

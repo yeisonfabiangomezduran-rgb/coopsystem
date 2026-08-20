@@ -147,15 +147,16 @@ private LoanInstallmentResponse toResponse(
         LoanInstallment installment) {
 
     return new LoanInstallmentResponse(
-            installment.getInstallmentNumber(),
-            installment.getDueDate(),
-            installment.getPrincipal(),
-            installment.getInterest(),
-            installment.getTotalPayment(),
-            installment.getRemainingBalance(),
-            installment.getStatus().name(),
-            installment.getPaidAt()
-    );
+        installment.getInstallmentNumber(),
+        installment.getDueDate(),
+        installment.getPrincipal(),
+        installment.getInterest(),
+        installment.getTotalPayment(),
+        installment.getRemainingBalance(),
+        installment.getPaidAmount(),
+        installment.getStatus().name(),
+        installment.getPaidAt()
+);
 }
 
 }

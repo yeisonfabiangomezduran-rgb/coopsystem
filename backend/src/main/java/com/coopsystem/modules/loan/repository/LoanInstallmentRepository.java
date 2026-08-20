@@ -24,4 +24,10 @@ public interface LoanInstallmentRepository
 
     List<LoanInstallment> findByStatus(
             InstallmentStatus status);
+
+    List<LoanInstallment> findByLoanIdAndStatusOrderByInstallmentNumberAsc(
+        Long loanId,
+        InstallmentStatus status
+);
+
 }

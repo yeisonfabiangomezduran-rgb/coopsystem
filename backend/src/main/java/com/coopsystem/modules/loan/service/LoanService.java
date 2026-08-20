@@ -131,8 +131,10 @@ public class LoanService {
 
         // Consigna el dinero en la cuenta de ahorro del asociado
         transactionService.depositLoan(
-                loan.getAssociate().getId(),
-                loan.getAmount());
+        loan.getAssociate().getId(),
+        loan.getAmount(),
+        loan
+);
 
         // Cambia el estado del préstamo
         loan.setStatus(LoanStatus.DISBURSED);
