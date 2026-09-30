@@ -483,7 +483,7 @@ class LoanServiceTest {
         verify(transactionService)
                 .depositLoan(
                         TestConstants.ASSOCIATE_ID,
-                        TestConstants.LOAN_AMOUNT);
+                        TestConstants.LOAN_AMOUNT, loan);
 
         verify(loanInstallmentService)
                 .generateSchedule(TestConstants.LOAN_ID);

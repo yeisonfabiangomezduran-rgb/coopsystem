@@ -17,11 +17,11 @@ const defaultData = [
 ];
 
 const chartMargin = { top: 8, right: 8, left: -20, bottom: 0 };
-const xAxisTick = { fill: "#64748b", fontSize: 12, fontWeight: 600 };
-const tooltipContentStyle = { border: "1px solid #e2e8f0", borderRadius: "12px", boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)" };
-const tooltipCursor = { stroke: "#cbd5e1", strokeWidth: 1 };
-const tooltipLabelStyle = { color: "#334155", fontWeight: 700 };
-const activeDot = { r: 5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 2 };
+const xAxisTick = { fill: "#536273", fontSize: 12, fontWeight: 600 };
+const tooltipContentStyle = { border: "1px solid #dce5ed", borderRadius: "8px", boxShadow: "0 8px 20px rgba(27, 42, 65, 0.08)" };
+const tooltipCursor = { stroke: "#c9d5df", strokeWidth: 1 };
+const tooltipLabelStyle = { color: "#1B2A41", fontWeight: 700 };
+const activeDot = { r: 5, fill: "#163A63", stroke: "#ffffff", strokeWidth: 2 };
 
 export default function LoanChart({
   data = defaultData,
@@ -35,11 +35,11 @@ export default function LoanChart({
       <AreaChart data={data} margin={chartMargin}>
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+            <stop offset="0%" stopColor="#245B8F" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="#245B8F" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" />
+        <CartesianGrid vertical={false} stroke="#dce5ed" strokeDasharray="3 3" />
         <XAxis axisLine={false} dataKey="mes" tick={xAxisTick} tickLine={false} />
         <Tooltip
           contentStyle={tooltipContentStyle}
@@ -51,7 +51,7 @@ export default function LoanChart({
           type="monotone"
           dataKey={dataKey}
           fill={`url(#${gradientId})`}
-          stroke="#2563eb"
+          stroke="#163A63"
           strokeWidth={3}
           activeDot={activeDot}
         />

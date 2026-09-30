@@ -15,16 +15,16 @@ const navigation = [
 
 export default function Sidebar() {
   return (
-    <nav className="border-b border-slate-200 bg-white" aria-label="Navegación principal">
-      <div className="mx-auto flex max-w-[1440px] justify-center gap-1 overflow-x-auto px-3 sm:px-5 lg:px-6">
+    <nav className="bg-[#163A63] shadow-sm" aria-label="Navegación principal">
+      <div className="mx-auto flex max-w-[1440px] overflow-x-auto px-2 sm:px-5 lg:px-9">
         {navigation.map(({ label, icon: Icon, to }) => to ? (
           <NavLink
-            className={({ isActive }) => `relative flex shrink-0 flex-1 items-center justify-center gap-1.5 px-3 py-5 text-sm font-bold transition sm:px-4 sm:text-base ${isActive ? "text-blue-600" : "text-slate-500 hover:text-slate-800"}`}
+            className={({ isActive }) => `relative flex shrink-0 items-center gap-2 px-3 py-4 text-sm font-semibold whitespace-nowrap transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white sm:px-4 ${isActive ? "bg-[#245B8F] text-white" : "text-[#dbe8f3] hover:bg-[#245B8F] hover:text-white"}`}
             end={to === "/"}
             key={label}
             to={to}
           >
-            {({ isActive }) => <><Icon size={21} strokeWidth={2.2} />{label}{isActive && <span className="absolute inset-x-1 bottom-0 h-0.75 rounded-t-full bg-blue-600" />}</>}
+            {({ isActive }) => <><Icon size={18} strokeWidth={2} />{label}{isActive && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-[#6dd4af]" />}</>}
           </NavLink>
         ) : (
           <button className="flex shrink-0 flex-1 items-center justify-center gap-1.5 px-3 py-5 text-sm font-bold text-slate-400 sm:px-4 sm:text-base" disabled key={label}>

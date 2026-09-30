@@ -42,14 +42,14 @@ export default function Login() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-50 px-4 py-8">
-      <Card className="w-full max-w-md">
+    <main className="grid min-h-screen place-items-center bg-[#F4F6F8] px-4 py-8">
+      <Card className="w-full max-w-md border-t-4 border-t-[#163A63]">
         <div className="text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-200">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-xl bg-[#163A63] text-white shadow-sm">
             <Landmark size={30} strokeWidth={2.2} />
           </div>
-          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-900">Bienvenido a CoopSystem</h1>
-          <p className="mt-2 text-sm font-medium text-slate-500">Ingresa tus credenciales para continuar.</p>
+          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-[#1B2A41]">Bienvenido a CoopSystem</h1>
+          <p className="mt-2 text-sm font-medium text-[#536273]">Sistema de Gestión Cooperativa</p>
         </div>
 
         <form className="mt-7 space-y-4" onSubmit={handleSubmit(onSubmit)}>

@@ -49,6 +49,20 @@ public class LoanService {
     }
 
     @Transactional(readOnly = true)
+    public List<LoanResponse> findByAssociateId(Long associateId) {
+
+        if (!associateRepository.existsById(associateId)) {
+            throw new BusinessException("El asociado no existe");
+        }
+
+        return loanRepository
+                .findByAssociate_IdOrderByRequestedAtDesc(associateId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public LoanResponse findById(Long id) {
 
         return toResponse(getLoan(id));

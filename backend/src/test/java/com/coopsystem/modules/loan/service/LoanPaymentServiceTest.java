@@ -1,5 +1,6 @@
 package com.coopsystem.modules.loan.service;
 
+import com.coopsystem.modules.transaction.service.TransactionService;
 import com.coopsystem.modules.loan.dto.request.LoanPaymentRequest;
 import com.coopsystem.modules.loan.dto.response.LoanPaymentResponse;
 import com.coopsystem.modules.loan.entity.InstallmentStatus;
@@ -39,6 +40,9 @@ class LoanPaymentServiceTest {
     @Mock
     private TreasuryService treasuryService;
 
+    @Mock
+    private TransactionService transactionService;
+
     @InjectMocks
     private LoanPaymentService loanPaymentService;
 
@@ -68,10 +72,10 @@ class LoanPaymentServiceTest {
                 .thenReturn(Optional.of(loan));
 
         when(loanInstallmentRepository
-                .findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
+                .findByLoanIdAndStatusOrderByInstallmentNumberAsc(
                         TestConstants.LOAN_ID,
                         InstallmentStatus.PENDING))
-                .thenReturn(Optional.of(installment));
+                .thenReturn(java.util.List.of(installment));
 
         when(loanInstallmentRepository.countByLoanIdAndStatus(
                 TestConstants.LOAN_ID,
@@ -112,7 +116,7 @@ class LoanPaymentServiceTest {
                 .deposit(any());
     }
 
-        @Test
+    @Test
     void shouldCancelLoanWhenLastInstallmentIsPaid() {
 
         Loan loan = LoanTestData.disbursedLoan();
@@ -131,16 +135,17 @@ class LoanPaymentServiceTest {
         installment.setStatus(InstallmentStatus.PENDING);
 
         LoanPaymentRequest request =
-                new LoanPaymentRequest(new BigDecimal("1000000"));
+                new LoanPaymentRequest(
+                        new BigDecimal("1000000"));
 
         when(loanRepository.findById(TestConstants.LOAN_ID))
                 .thenReturn(Optional.of(loan));
 
         when(loanInstallmentRepository
-                .findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
+                .findByLoanIdAndStatusOrderByInstallmentNumberAsc(
                         TestConstants.LOAN_ID,
                         InstallmentStatus.PENDING))
-                .thenReturn(Optional.of(installment));
+                .thenReturn(java.util.List.of(installment));
 
         when(loanInstallmentRepository.countByLoanIdAndStatus(
                 TestConstants.LOAN_ID,
@@ -167,7 +172,8 @@ class LoanPaymentServiceTest {
                 .thenReturn(Optional.empty());
 
         LoanPaymentRequest request =
-                new LoanPaymentRequest(new BigDecimal("1000000"));
+                new LoanPaymentRequest(
+                        new BigDecimal("1000000"));
 
         BusinessException exception =
                 assertThrows(
@@ -197,7 +203,8 @@ class LoanPaymentServiceTest {
                 .thenReturn(Optional.of(loan));
 
         LoanPaymentRequest request =
-                new LoanPaymentRequest(new BigDecimal("1000000"));
+                new LoanPaymentRequest(
+                        new BigDecimal("1000000"));
 
         BusinessException exception =
                 assertThrows(
@@ -224,13 +231,14 @@ class LoanPaymentServiceTest {
                 .thenReturn(Optional.of(loan));
 
         when(loanInstallmentRepository
-                .findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
+                .findByLoanIdAndStatusOrderByInstallmentNumberAsc(
                         TestConstants.LOAN_ID,
                         InstallmentStatus.PENDING))
-                .thenReturn(Optional.empty());
+                .thenReturn(java.util.List.of());
 
         LoanPaymentRequest request =
-                new LoanPaymentRequest(new BigDecimal("1000000"));
+                new LoanPaymentRequest(
+                        new BigDecimal("1000000"));
 
         BusinessException exception =
                 assertThrows(
@@ -245,42 +253,65 @@ class LoanPaymentServiceTest {
     }
 
     @Test
-    void shouldThrowExceptionWhenAmountIsIncorrect() {
+    void shouldAllowPartialInstallmentPayment() {
 
         Loan loan = LoanTestData.disbursedLoan();
 
         LoanInstallment installment = new LoanInstallment();
 
+        ReflectionHelper.setId(installment, 1L);
+
         installment.setLoan(loan);
         installment.setInstallmentNumber(1);
+        installment.setDueDate(LocalDate.now());
+        installment.setPrincipal(new BigDecimal("900000"));
+        installment.setInterest(new BigDecimal("100000"));
         installment.setTotalPayment(new BigDecimal("1000000"));
+        installment.setPaidAmount(BigDecimal.ZERO);
         installment.setStatus(InstallmentStatus.PENDING);
+
+        LoanPaymentRequest request =
+                new LoanPaymentRequest(
+                        new BigDecimal("500000"));
 
         when(loanRepository.findById(TestConstants.LOAN_ID))
                 .thenReturn(Optional.of(loan));
 
         when(loanInstallmentRepository
-                .findFirstByLoanIdAndStatusOrderByInstallmentNumberAsc(
+                .findByLoanIdAndStatusOrderByInstallmentNumberAsc(
                         TestConstants.LOAN_ID,
                         InstallmentStatus.PENDING))
-                .thenReturn(Optional.of(installment));
+                .thenReturn(java.util.List.of(installment));
 
-        LoanPaymentRequest request =
-                new LoanPaymentRequest(new BigDecimal("500000"));
+        when(loanInstallmentRepository.countByLoanIdAndStatus(
+                TestConstants.LOAN_ID,
+                InstallmentStatus.PENDING))
+                .thenReturn(1L);
 
-        BusinessException exception =
-                assertThrows(
-                        BusinessException.class,
-                        () -> loanPaymentService.pay(
-                                TestConstants.LOAN_ID,
-                                request));
+        LoanPaymentResponse response =
+                loanPaymentService.pay(
+                        TestConstants.LOAN_ID,
+                        request);
+
+        assertNotNull(response);
 
         assertEquals(
-                "El valor pagado no corresponde al valor de la cuota",
-                exception.getMessage());
+                new BigDecimal("500000"),
+                response.getAmountPaid());
 
-        verify(treasuryService, never())
+        assertEquals(
+                InstallmentStatus.PENDING,
+                installment.getStatus());
+
+        verify(loanInstallmentRepository)
+                .save(any(LoanInstallment.class));
+
+        verify(treasuryService)
                 .deposit(any());
-    }
 
+        verify(transactionService)
+                .recordLoanPayment(
+                        loan,
+                        new BigDecimal("500000"));
+    }
 }

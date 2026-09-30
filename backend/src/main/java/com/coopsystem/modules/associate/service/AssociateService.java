@@ -5,6 +5,7 @@ import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.shared.exception.BusinessException;
 import com.coopsystem.shared.exception.ResourceNotFoundException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,6 +21,26 @@ public class AssociateService {
 
     public List<AssociateResponse> findAll() {
         return associateRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public List<AssociateResponse> search(String query, int limit) {
+
+        String normalizedQuery = query == null ? "" : query.trim();
+
+        if (normalizedQuery.length() < 2) {
+            return List.of();
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 10);
+
+        return associateRepository
+                .searchByText(
+                        normalizedQuery,
+                        PageRequest.of(0, safeLimit)
+                )
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -82,8 +103,11 @@ public class AssociateService {
 
         boolean duplicateDocument =
                 id == null
-                        ? associateRepository.existsByDocumentNumber(request.getDocumentNumber())
-                        : associateRepository.existsByDocumentNumberAndIdNot(request.getDocumentNumber(), id);
+                        ? associateRepository.existsByDocumentNumber(
+                                request.getDocumentNumber())
+                        : associateRepository.existsByDocumentNumberAndIdNot(
+                                request.getDocumentNumber(),
+                                id);
 
         if (duplicateDocument) {
             throw new BusinessException(
@@ -94,8 +118,11 @@ public class AssociateService {
 
         boolean duplicateEmail =
                 id == null
-                        ? associateRepository.existsByEmail(request.getEmail())
-                        : associateRepository.existsByEmailAndIdNot(request.getEmail(), id);
+                        ? associateRepository.existsByEmail(
+                                request.getEmail())
+                        : associateRepository.existsByEmailAndIdNot(
+                                request.getEmail(),
+                                id);
 
         if (duplicateEmail) {
             throw new BusinessException(

@@ -21,7 +21,15 @@ public class LoanController {
     }
 
     @GetMapping
-    public ApiResponse<List<LoanResponse>> findAll() {
+    public ApiResponse<List<LoanResponse>> findAll(
+            @RequestParam(required = false) Long associateId) {
+
+        if (associateId != null) {
+            return ApiResponse.success(
+                    "Préstamos del asociado obtenidos correctamente",
+                    loanService.findByAssociateId(associateId)
+            );
+        }
 
         return ApiResponse.success(
                 "Listado de préstamos obtenido correctamente",
@@ -91,6 +99,4 @@ public class LoanController {
                 loanService.disburse(id)
         );
     }
-
-    
 }

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState } from "react";
-import { ArrowRight, CheckCircle2, CircleAlert, Clock3, HandCoins, Landmark, TrendingUp, Users, WalletCards } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { ArrowRight, CheckCircle2, CircleAlert, Clock3, FileWarning, HandCoins, Landmark, ReceiptText, TrendingUp, Users, WalletCards } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
@@ -10,6 +10,7 @@ import PageContainer from "../../components/ui/PageContainer";
 import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
+import { getDashboardReport } from "../../services/reportService";
 
 const LoanChart = lazy(() => import("./LoanChart"));
 const recentActivity = [
@@ -17,13 +18,6 @@ const recentActivity = [
   { id: "PRE-0020", associate: "María Camila Ulloa", action: "Solicitud de préstamo", amount: "$ 8.000.000", date: "30 abr. 2026", status: "En revisión" },
   { id: "AHO-0021", associate: "José Manuel Veltrán", action: "Consignación de ahorros", amount: "$ 1.250.000", date: "02 may. 2026", status: "Completado" },
 ];
-const summaryCards = [
-  { title: "Asociados activos", value: "325", subtitle: "12 nuevos este mes", icon: <Users size={28} />, color: "bg-blue-50 text-blue-600" },
-  { title: "Cuentas de ahorro", value: "318", subtitle: "8 aperturas hoy", icon: <WalletCards size={28} />, color: "bg-amber-50 text-amber-600" },
-  { title: "Préstamos vigentes", value: "58", subtitle: "15 en revisión", icon: <HandCoins size={28} />, color: "bg-violet-50 text-violet-600" },
-  { title: "Caja disponible", value: "$450 M", subtitle: "5% frente al mes anterior", icon: <Landmark size={28} />, color: "bg-emerald-50 text-emerald-600" },
-];
-
 const pendingItems = [
   { title: "Préstamos pendientes", description: "15 solicitudes de crédito están en revisión.", count: 15, route: "/prestamos" },
   { title: "Asociados pendientes", description: "4 registros requieren completar su información.", count: 4, route: "/asociados" },
@@ -43,9 +37,53 @@ function formatMovementDate(value) {
   return new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)).replace(/\./g, "");
 }
 
+function formatCurrency(value) {
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0)).replace("COP", "$ ");
+}
+
 export default function Dashboard() {
   const [activeModal, setActiveModal] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadDashboard() {
+      try {
+        const report = await getDashboardReport();
+        if (isCurrent) setDashboard(report);
+      } catch {
+        if (isCurrent) setDashboardError(true);
+      } finally {
+        if (isCurrent) setIsDashboardLoading(false);
+      }
+    }
+
+    void loadDashboard();
+    return () => { isCurrent = false; };
+  }, [reloadKey]);
+
+  const summaryCards = dashboard ? [
+    { title: "Asociados", value: dashboard.totalAssociates, subtitle: "Asociados registrados", icon: <Users size={23} />, color: "bg-[#EAF2F8] text-[#163A63]" },
+    { title: "Cuentas de ahorro", value: dashboard.activeSavingsAccounts, subtitle: "Cuentas activas", icon: <WalletCards size={23} />, color: "bg-[#EAF2F8] text-[#245B8F]" },
+    { title: "Préstamos vigentes", value: dashboard.activeLoans, subtitle: "Créditos desembolsados", icon: <HandCoins size={23} />, color: "bg-[#EAF2F8] text-[#163A63]" },
+    { title: "Transacciones", value: dashboard.totalTransactions, subtitle: "Operaciones registradas", icon: <ReceiptText size={23} />, color: "bg-[#EAF2F8] text-[#245B8F]" },
+    { title: "Caja disponible", value: formatCurrency(dashboard.treasuryBalance), subtitle: "Saldo de Caja General", icon: <Landmark size={23} />, color: "bg-[#E8F7F0] text-[#16805C]" },
+  ] : [];
+
+  function retryDashboard() {
+    setIsDashboardLoading(true);
+    setDashboardError(false);
+    setReloadKey((current) => current + 1);
+  }
 
   function goTo(route) {
     setActiveModal(null);
@@ -55,14 +93,14 @@ export default function Dashboard() {
   return (
     <>
     <PageContainer>
-      <PageHeader aside={<p className="text-sm font-medium text-slate-500">Actualizado hoy, 10:30 a. m.</p>} eyebrow="Resumen general" subtitle="Consulta el estado operativo de tu cooperativa." title="Panel de control" />
-      <SummaryCards items={summaryCards} />
+      <PageHeader aside={<p className="rounded-lg border border-[#dce5ed] bg-white px-3 py-2 text-sm font-medium text-[#536273]">Actualizado hoy, 10:30 a. m.</p>} eyebrow="Resumen institucional" subtitle="Información consolidada de los principales indicadores operativos y financieros." title="Resumen institucional" />
+      {isDashboardLoading ? <Card><Loader label="Cargando indicadores institucionales..." /></Card> : dashboardError ? <Card className="text-center"><p className="text-base font-bold text-[#1B2A41]">No fue posible cargar los indicadores.</p><Button className="mt-4" onClick={retryDashboard} variant="secondary">Reintentar</Button></Card> : <SummaryCards items={summaryCards} />}
       <section className="grid gap-5 xl:grid-cols-3">
-        <DataSection className="p-6 xl:col-span-2" description="Evolución durante los últimos seis meses." headerClassName="flex items-start justify-between gap-4" title="Solicitudes de préstamo" titleClassName="text-lg font-extrabold tracking-tight text-slate-900" action={<div className="flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-700"><TrendingUp size={16} /> +36%</div>}><div className="mt-5"><Suspense fallback={<Loader label="Cargando evolución..." />}><LoanChart /></Suspense></div></DataSection>
+        <DataSection className="p-6 xl:col-span-2" description="Evolución de solicitudes y comportamiento de la cartera durante los últimos seis meses." headerClassName="flex items-start justify-between gap-4" title="Gestión de cartera" titleClassName="text-lg font-extrabold tracking-tight text-[#1B2A41]" action={<div className="flex items-center gap-1.5 rounded-lg bg-[#E8F7F0] px-3 py-1.5 text-sm font-bold text-[#16805C]"><TrendingUp size={16} /> +36%</div>}><div className="mt-5"><Suspense fallback={<Loader label="Cargando evolución..." />}><LoanChart /></Suspense></div></DataSection>
         <Card className="p-6">
-          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-extrabold tracking-tight text-slate-900">Atención requerida</h2><p className="mt-1 text-sm font-medium text-slate-500">Tareas pendientes de gestión.</p></div><div className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600"><CircleAlert size={21} /></div></div>
-          <div className="mt-6 divide-y divide-slate-100"><div className="flex items-center justify-between gap-4 py-3 pt-0"><p className="text-sm font-semibold text-slate-600">Solicitudes por revisar</p><span className="text-lg font-extrabold text-slate-900">15</span></div><div className="flex items-center justify-between gap-4 py-3"><p className="text-sm font-semibold text-slate-600">Cuotas próximas a vencer</p><span className="text-lg font-extrabold text-slate-900">8</span></div><div className="flex items-center justify-between gap-4 py-3 pb-0"><p className="text-sm font-semibold text-slate-600">Documentos pendientes</p><span className="text-lg font-extrabold text-slate-900">4</span></div></div>
-          <button className="mt-6 inline-flex items-center gap-1.5 text-sm font-bold text-blue-600 transition hover:text-blue-700" onClick={() => setActiveModal("pending")} type="button">Gestionar pendientes <ArrowRight size={16} /></button>
+          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-extrabold tracking-tight text-[#1B2A41]">Pendientes de gestión</h2><p className="mt-1 text-sm font-medium text-[#536273]">Tareas y procesos que requieren atención.</p></div><div className="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-[#D97706]"><CircleAlert size={21} /></div></div>
+          <div className="mt-5 divide-y divide-[#e6edf2]"><div className="flex items-center gap-3 py-3 pt-0"><FileWarning className="text-[#D97706]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Solicitudes por revisar</p><span className="text-lg font-extrabold text-[#1B2A41]">15</span><ArrowRight className="text-[#536273]" size={16} /></div><div className="flex items-center gap-3 py-3"><HandCoins className="text-[#245B8F]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Cuotas próximas a vencer</p><span className="text-lg font-extrabold text-[#1B2A41]">8</span><ArrowRight className="text-[#536273]" size={16} /></div><div className="flex items-center gap-3 py-3 pb-0"><Users className="text-[#245B8F]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Documentos pendientes</p><span className="text-lg font-extrabold text-[#1B2A41]">4</span><ArrowRight className="text-[#536273]" size={16} /></div></div>
+          <button className="mt-6 inline-flex items-center gap-1.5 text-sm font-bold text-[#245B8F] transition hover:text-[#163A63]" onClick={() => setActiveModal("pending")} type="button">Gestionar pendientes <ArrowRight size={16} /></button>
         </Card>
       </section>
       <DataSection className="overflow-hidden p-0" description="Últimos movimientos registrados en el sistema." title="Actividad reciente" action={<button className="inline-flex items-center gap-1.5 text-left text-sm font-bold text-blue-600 transition hover:text-blue-700" onClick={() => setActiveModal("movements")} type="button">Ver movimientos <ArrowRight size={16} /></button>}>

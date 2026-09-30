@@ -7,37 +7,5 @@ export default function StatCard({
   icon,
   color = "bg-blue-100",
 }) {
-  return (
-    <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer">
-      <div className="flex flex-col gap-5">
-        <div
-          className={`
-            w-14
-            h-14
-            rounded-2xl
-            flex
-            items-center
-            justify-center
-            ${color}
-          `}
-        >
-          {icon}
-        </div>
-
-        <div>
-          <h2 className="text-4xl font-bold text-slate-800">
-            {value}
-          </h2>
-
-          <p className="text-slate-500 mt-2">
-            {title}
-          </p>
-        </div>
-
-        <p className="text-green-600 font-semibold">
-          {subtitle}
-        </p>
-      </div>
-    </Card>
-  );
+  return <Card className="relative overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-md"><span className="absolute inset-x-0 top-0 h-1 bg-[#163A63]" /><div className="flex items-start justify-between gap-4 pt-1"><div><p className="text-xs font-extrabold uppercase tracking-[0.11em] text-[#536273]">{title}</p><h2 className="mt-3 text-3xl font-extrabold tracking-tight text-[#1B2A41]">{value}</h2></div><div className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${color}`}>{icon}</div></div><p className="mt-4 flex items-center gap-1.5 text-sm font-semibold text-[#16805C]"><span className="h-1.5 w-1.5 rounded-full bg-[#16805C]" />{subtitle}</p></Card>;
 }

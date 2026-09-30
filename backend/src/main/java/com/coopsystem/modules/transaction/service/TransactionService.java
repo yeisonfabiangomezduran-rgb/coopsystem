@@ -119,6 +119,25 @@ public class TransactionService {
     }
 
     /**
+ * Obtiene todas las transacciones del sistema.
+ */
+@Transactional(readOnly = true)
+public List<TransactionResponse> findAllTransactions() {
+
+    return transactionRepository
+            .findAllByOrderByTransactionDateDesc()
+            .stream()
+            .map(transaction -> new TransactionResponse(
+                    transaction.getTransactionType().name(),
+                    transaction.getAmount(),
+                    transaction.getPreviousBalance(),
+                    transaction.getCurrentBalance(),
+                    transaction.getTransactionDate()
+            ))
+            .toList();
+}
+
+    /**
      * Obtiene el historial de transacciones de una cuenta.
      */
     @Transactional(readOnly = true)
@@ -349,4 +368,6 @@ public class TransactionService {
 
         transactionRepository.save(transaction);
     }
+
+ 
 }

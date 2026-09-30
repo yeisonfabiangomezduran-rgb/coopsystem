@@ -5,12 +5,17 @@
 }
 
 html {
-  background: #f8fafc;
+  background: #F4F6F8;
 }
 
 body {
   min-width: 320px;
   margin: 0;
+  background: #F4F6F8;
+  color: #1B2A41;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 button { cursor: pointer; }
+button, a, input, select, textarea { transition-duration: 180ms; }
+::selection { background: #cfe4f6; color: #163A63; }

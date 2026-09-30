@@ -53,7 +53,7 @@ class UserServiceTest {
         when(userRepository.existsByEmail("admin@test.com"))
                 .thenReturn(false);
 
-        when(roleRepository.findByName("ROLE_USER"))
+        when(roleRepository.findByName("USER"))
                 .thenReturn(Optional.of(role));
 
         when(passwordEncoder.encode("Password123"))
@@ -125,7 +125,7 @@ class UserServiceTest {
                 .save(any());
     }
 
-        @Test
+    @Test
     void shouldThrowExceptionWhenEmailAlreadyExists() {
 
         CreateUserRequest request = new CreateUserRequest();
@@ -168,7 +168,7 @@ class UserServiceTest {
         when(userRepository.existsByEmail("admin@test.com"))
                 .thenReturn(false);
 
-        when(roleRepository.findByName("ROLE_USER"))
+        when(roleRepository.findByName("USER"))
                 .thenReturn(Optional.empty());
 
         BusinessException exception =
@@ -177,7 +177,7 @@ class UserServiceTest {
                         () -> userService.create(request));
 
         assertEquals(
-                "Rol ROLE_USER no encontrado",
+                "Rol USER no encontrado",
                 exception.getMessage());
 
         verify(userRepository, never())
@@ -186,5 +186,4 @@ class UserServiceTest {
         verify(passwordEncoder, never())
                 .encode(anyString());
     }
-
 }

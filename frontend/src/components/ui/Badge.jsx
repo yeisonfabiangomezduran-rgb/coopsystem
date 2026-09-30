@@ -1,7 +1,7 @@
 const variants = {
-  success: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  neutral: "bg-slate-100 text-slate-600 ring-slate-200",
-  warning: "bg-amber-50 text-amber-700 ring-amber-200",
+  success: "bg-[#E8F7F0] text-[#16805C] ring-[#bde8d7]",
+  neutral: "bg-slate-100 text-[#536273] ring-slate-200",
+  warning: "bg-amber-50 text-[#D97706] ring-amber-200",
 };
 
 export default function Badge({ children, variant = "neutral", className = "" }) {

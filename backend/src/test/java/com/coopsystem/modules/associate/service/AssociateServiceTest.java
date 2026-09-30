@@ -150,7 +150,7 @@ class AssociateServiceTest {
                 ArgumentCaptor.forClass(
                         Associate.class);
 
-        verify(associateRepository)
+        verify(associateRepository, times(2))
                 .save(captor.capture());
 
         assertEquals(

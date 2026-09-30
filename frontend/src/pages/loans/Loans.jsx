@@ -1,41 +1,38 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   BanknoteArrowDown,
   CircleDollarSign,
-  FileCheck2,
-  HandCoins,
+  ClipboardList,
+  CreditCard,
+  FileText,
   Plus,
-  Timer,
+  Search,
+  X,
 } from "lucide-react";
 
-import ActionMenu from "../../components/ui/ActionMenu";
 import AssociateSearch from "../../components/ui/AssociateSearch";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
-import DataSection from "../../components/ui/DataSection";
 import EmptyState from "../../components/ui/EmptyState";
-import FilterBar from "../../components/ui/FilterBar";
 import Input from "../../components/ui/Input";
 import Loader from "../../components/ui/Loader";
 import Modal from "../../components/ui/Modal";
 import PageContainer from "../../components/ui/PageContainer";
 import PageHeader from "../../components/ui/PageHeader";
-import SummaryCards from "../../components/ui/SummaryCards";
-import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
 import { notifyError, notifySuccess } from "../../components/ui/toastNotifications";
 
+import api from "../../services/api";
 import associateService from "../../services/associateService";
-
 import {
   approveLoan,
   createLoan,
   disburseLoan,
-  getLoanById,
+  getLoanByNumber,
   getLoanInstallments,
-  getLoans,
+  getLoansByAssociateId,
   payLoanInstallment,
   rejectLoan,
 } from "../../services/loanService";
@@ -49,24 +46,6 @@ const statusLabels = {
   CANCELLED: "Cancelado",
 };
 
-const statusVariant = {
-  Pendiente: "warning",
-  Aprobado: "success",
-  Rechazado: "neutral",
-  Desembolsado: "success",
-  Pagado: "success",
-  Cancelado: "neutral",
-};
-
-const loanFilters = [
-  {
-    id: "status",
-    label: "Estado",
-    ariaLabel: "Filtrar por estado",
-    options: ["Todos", ...Object.values(statusLabels)],
-  },
-];
-
 function formatCurrency(value) {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
@@ -78,91 +57,163 @@ function formatCurrency(value) {
 }
 
 function formatDate(value) {
-  if (!value) return "No disponible";
+  if (!value) return null;
 
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
     : new Date(value);
 
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })
-    .format(date)
-    .replace(/\./g, "");
+  return Number.isNaN(date.getTime())
+    ? null
+    : new Intl.DateTimeFormat("es-CO", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+        .format(date)
+        .replace(/\./g, "");
 }
 
 function getAssociateName(associate) {
-  return [associate.firstName, associate.lastName]
+  return [associate?.firstName, associate?.lastName]
     .filter(Boolean)
     .join(" ");
 }
 
-function mapLoan(loan, associatesById) {
+function mapLoan(loan, associateName = "Asociado no disponible") {
   return {
     ...loan,
     number: loan.loanNumber,
-    associate:
-      associatesById.get(loan.associateId) || "Asociado no disponible",
+    associate: associateName,
     statusLabel: statusLabels[loan.status] || loan.status,
   };
 }
 
 function getErrorMessage(error, fallback) {
-  const response = error.response?.data;
+  const data = error.response?.data;
 
-  if (response?.errors?.[0]) {
-    return response.errors[0];
+  if (error.response?.status === 404) {
+    return "Crédito no encontrado";
   }
 
-  if (response?.message) {
-    return response.message;
+  return data?.errors?.[0] ?? data?.message ?? fallback;
+}
+
+function statusStyle(status) {
+  if (status === "DISBURSED") {
+    return {
+      variant: "neutral",
+      className: "bg-[#EAF2F8] text-[#245B8F] ring-[#cfe0ed]",
+    };
   }
 
-  const status = error.response?.status;
+  if (status === "PENDING") return { variant: "warning" };
 
-  if (status === 400) {
-    return "La solicitud contiene datos inválidos.";
+  if (status === "PAID" || status === "APPROVED") {
+    return { variant: "success" };
   }
 
-  if (status === 401) {
-    return "Tu sesión no es válida. Inicia sesión nuevamente.";
-  }
+  return { variant: "neutral" };
+}
 
-  if (status === 403) {
-    return "No tienes permisos para realizar esta acción.";
-  }
+function summarizeInstallments(installments = []) {
+  const pending = installments.filter((item) => item.status === "PENDING");
+  const paid = installments.filter((item) => item.status === "PAID");
+  const next = pending[0];
 
-  if (status === 404) {
-    return "El préstamo no existe o fue eliminado.";
-  }
+  const balance = pending.reduce(
+    (total, item) =>
+      total +
+      Math.max(
+        Number(item.totalPayment || 0) - Number(item.paidAmount || 0),
+        0
+      ),
+    0
+  );
 
-  if (status === 409) {
-    return "No fue posible completar la operación por un conflicto de datos.";
-  }
+  return { pending, paid, next, balance };
+}
 
-  if (status === 500) {
-    return "El servidor no pudo completar la operación. Inténtalo más tarde.";
-  }
+function DetailItem({ label, value, accent = false }) {
+  if (value === null || value === undefined || value === "") return null;
 
-  return fallback;
+  return (
+    <div className="rounded-lg border border-[#dce5ed] bg-white p-4">
+      <p className="text-xs font-extrabold uppercase tracking-[0.09em] text-[#536273]">
+        {label}
+      </p>
+      <p
+        className={`mt-1.5 text-sm font-extrabold ${
+          accent ? "text-[#16805C]" : "text-[#1B2A41]"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function Field({ label, error, children }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-bold text-[#1B2A41]">
+        {label}
+      </span>
+
+      {children}
+
+      {error && (
+        <p className="mt-1 text-sm font-semibold text-[#D92D20]">
+          {error}
+        </p>
+      )}
+    </label>
+  );
+}
+
+function StatCard({ icon, label, value }) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#EAF2F8] text-[#163A63]">
+          {icon}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#536273]">
+            {label}
+          </p>
+
+          <p className="mt-1 truncate text-xl font-extrabold text-[#1B2A41]">
+            {value}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 export default function Loans() {
-  const [loans, setLoans] = useState([]);
   const [associates, setAssociates] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [kpis, setKpis] = useState(null);
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedAssociate, setSelectedAssociate] = useState(null);
-  const [associateError, setAssociateError] = useState("");
+  const [query, setQuery] = useState("");
+  const [associateSuggestions, setAssociateSuggestions] = useState([]);
+  const [selectedSearchAssociate, setSelectedSearchAssociate] = useState(null);
+
+  const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState("");
+
+  const [matchingLoans, setMatchingLoans] = useState([]);
+  const [resultLoan, setResultLoan] = useState(null);
+  const [resultSummary, setResultSummary] = useState(null);
+
+  const [statusLoan, setStatusLoan] = useState(null);
+  const [historyLoan, setHistoryLoan] = useState(null);
+  const [history, setHistory] = useState([]);
 
   const [detailLoan, setDetailLoan] = useState(null);
-
-  const [installmentsLoan, setInstallmentsLoan] = useState(null);
-  const [installments, setInstallments] = useState([]);
 
   const [paymentLoan, setPaymentLoan] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -172,10 +223,9 @@ export default function Loans() {
   const [actionType, setActionType] = useState("");
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
 
-  const [isEditUnavailableOpen, setIsEditUnavailableOpen] = useState(false);
-
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedAssociate, setSelectedAssociate] = useState(null);
+  const [associateError, setAssociateError] = useState("");
 
   const {
     register,
@@ -190,358 +240,414 @@ export default function Loans() {
     },
   });
 
-  const loadLoans = useCallback(async () => {
-    setLoadError("");
-    setIsLoading(true);
+  /* =========================
+     INDICADORES
+  ========================= */
 
+  async function loadKpis() {
     try {
-      const [loanList, associateList] = await Promise.all([
-        getLoans(),
-        associateService.getAll(),
-      ]);
-
-      const associatesById = new Map(
-        associateList.map((associate) => [
-          associate.id,
-          getAssociateName(associate),
-        ])
-      );
-
-      setAssociates(associateList);
-      setLoans(
-        loanList.map((loan) => mapLoan(loan, associatesById))
-      );
-    } catch (error) {
-      console.error("Error cargando préstamos:", error);
-
-      const message = getErrorMessage(
-        error,
-        "No fue posible cargar los préstamos. Inténtalo de nuevo."
-      );
-
-      setLoadError(message);
-      notifyError(message);
-    } finally {
-      setIsLoading(false);
+      const response = await api.get("/reports/dashboard");
+      setKpis(response.data?.data ?? null);
+    } catch {
+      setKpis(null);
     }
-  }, []);
+  }
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
-    const load = async () => {
-      try {
-        const [loanList, associateList] = await Promise.all([
-          getLoans(),
-          associateService.getAll(),
-        ]);
-
-        const associatesById = new Map(
-          associateList.map((associate) => [
-            associate.id,
-            getAssociateName(associate),
-          ])
-        );
-
-        if (mounted) {
-          setAssociates(associateList);
-          setLoans(
-            loanList.map((loan) => mapLoan(loan, associatesById))
-          );
+    api
+      .get("/reports/dashboard")
+      .then((response) => {
+        if (active) {
+          setKpis(response.data?.data ?? null);
         }
-      } catch (error) {
-        console.error("Error cargando préstamos:", error);
-
-        if (mounted) {
-          const message = getErrorMessage(
-            error,
-            "No fue posible cargar los préstamos. Inténtalo de nuevo."
-          );
-
-          setLoadError(message);
-          notifyError(message);
+      })
+      .catch(() => {
+        if (active) {
+          setKpis(null);
         }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    load();
+      });
 
     return () => {
-      mounted = false;
+      active = false;
     };
   }, []);
 
-  const filteredLoans = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase("es-CO");
+  /* =========================
+     AUTOCOMPLETADO ASOCIADOS
+  ========================= */
 
-    return loans.filter((loan) => {
-      const matchesSearch =
-        !normalizedSearch ||
-        [loan.number, loan.associate].some((value) =>
-          value.toLocaleLowerCase("es-CO").includes(normalizedSearch)
+  useEffect(() => {
+    const value = query.trim();
+
+    if (
+      selectedSearchAssociate ||
+      value.length < 2 ||
+      /^\d+$/.test(value)
+    ) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await associateService.search(value, 5);
+
+        if (!controller.signal.aborted) {
+          setAssociateSuggestions(response ?? []);
+        }
+      } catch (error) {
+        if (
+          error.name !== "CanceledError" &&
+          error.code !== "ERR_CANCELED"
+        ) {
+          setAssociateSuggestions([]);
+        }
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, selectedSearchAssociate]);
+
+  /* =========================
+     LIMPIAR BUSQUEDA
+  ========================= */
+
+  function clearSearch() {
+    setQuery("");
+    setSearched(false);
+    setSearching(false);
+    setAssociateSuggestions([]);
+    setSelectedSearchAssociate(null);
+    setResultLoan(null);
+    setResultSummary(null);
+    setMatchingLoans([]);
+    setSearchMessage("");
+  }
+
+  /* =========================
+     CONSULTAR CREDITOS DEL ASOCIADO
+  ========================= */
+
+  async function selectAssociate(associate) {
+    setSelectedSearchAssociate(associate);
+    setQuery(getAssociateName(associate));
+    setAssociateSuggestions([]);
+    setSearched(true);
+    setSearching(true);
+    setResultLoan(null);
+    setResultSummary(null);
+    setSearchMessage("");
+    setMatchingLoans([]);
+
+    try {
+      const loans = await getLoansByAssociateId(associate.id);
+
+      const mappedLoans = loans.map((loan) =>
+        mapLoan(loan, getAssociateName(associate))
+      );
+
+      setMatchingLoans(mappedLoans);
+
+      if (!mappedLoans.length) {
+        setSearchMessage("El asociado no tiene créditos registrados.");
+      }
+    } catch (error) {
+      setSearchMessage(
+        getErrorMessage(
+          error,
+          "No fue posible consultar los créditos del asociado."
+        )
+      );
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  /* =========================
+     BUSQUEDA POR NUMERO
+  ========================= */
+
+  async function handleSearch(event) {
+    event.preventDefault();
+
+    const value = query.trim();
+
+    setSearched(true);
+    setSearchMessage("");
+    setResultLoan(null);
+    setResultSummary(null);
+    setMatchingLoans([]);
+    setAssociateSuggestions([]);
+
+    if (!value) {
+      setSearchMessage(
+        "Ingresa un número de crédito o selecciona un asociado."
+      );
+      return;
+    }
+
+    if (selectedSearchAssociate) {
+      await selectAssociate(selectedSearchAssociate);
+      return;
+    }
+
+    setSearching(true);
+
+    try {
+      const loan = await getLoanByNumber(value);
+
+      let associate;
+
+      try {
+        associate = await associateService.getById(loan.associateId);
+      } catch {
+        associate = null;
+      }
+
+      const mappedLoan = mapLoan(
+        loan,
+        associate ? getAssociateName(associate) : "Asociado no disponible"
+      );
+
+      setResultLoan(mappedLoan);
+
+      try {
+        const installments = await getLoanInstallments(mappedLoan.id);
+        setResultSummary(summarizeInstallments(installments));
+      } catch {
+        setResultSummary(null);
+      }
+    } catch (error) {
+      if (error.response?.status === 404 && /^\d+$/.test(value)) {
+        try {
+          const associate = await associateService.getById(Number(value));
+          await selectAssociate(associate);
+        } catch {
+          setSearchMessage(
+            "No encontramos un crédito ni un asociado con ese número."
+          );
+        }
+      } else {
+        setSearchMessage(
+          error.response?.status === 404
+            ? "Crédito no encontrado. Busca por el nombre del asociado."
+            : "No fue posible consultar el crédito. Inténtalo nuevamente."
         );
+      }
+    } finally {
+      setSearching(false);
+    }
+  }
 
-      return (
-        matchesSearch &&
-        (statusFilter === "Todos" ||
-          loan.statusLabel === statusFilter)
-      );
-    });
-  }, [loans, search, statusFilter]);
+  /* =========================
+     CRONOGRAMA
+  ========================= */
 
-  const summaryCards = useMemo(() => {
-    const pendingLoans = loans.filter(
-      (loan) => loan.status === "PENDING"
-    );
+  async function getSchedule(loan) {
+    const [currentLoan, installments] = await Promise.all([
+      getLoanDetailsWithAssociate(loan),
+      getLoanInstallments(loan.id),
+    ]);
 
-    const approvedLoans = loans.filter(
-      (loan) => loan.status === "APPROVED"
-    );
+    return {
+      loan: currentLoan,
+      installments,
+    };
+  }
 
-    const disbursedLoans = loans.filter(
-      (loan) => loan.status === "DISBURSED"
-    );
-
-    const totalAmount = loans.reduce(
-      (total, loan) => total + Number(loan.amount || 0),
-      0
-    );
-
-    return [
-      {
-        title: "Préstamos pendientes",
-        value: pendingLoans.length.toString(),
-        subtitle: "Solicitudes por gestionar",
-        icon: <Timer size={28} />,
-        color: "bg-blue-50 text-blue-600",
-      },
-      {
-        title: "Préstamos aprobados",
-        value: approvedLoans.length.toString(),
-        subtitle: "Pendientes de desembolso",
-        icon: <FileCheck2 size={28} />,
-        color: "bg-emerald-50 text-emerald-600",
-      },
-      {
-        title: "Préstamos desembolsados",
-        value: disbursedLoans.length.toString(),
-        subtitle: "Con cronograma generado",
-        icon: <HandCoins size={28} />,
-        color: "bg-violet-50 text-violet-600",
-      },
-      {
-        title: "Monto total",
-        value: formatCurrency(totalAmount),
-        subtitle: "Valor de los préstamos registrados",
-        icon: <CircleDollarSign size={28} />,
-        color: "bg-amber-50 text-amber-600",
-      },
-    ];
-  }, [loans]);
-
-  async function getLoanWithAssociate(id) {
-    const loan = await getLoanById(id);
-
-    let associate = associates.find(
-      (currentAssociate) =>
-        currentAssociate.id === loan.associateId
-    );
-
-    if (!associate) {
-      associate = await associateService.getById(
-        loan.associateId
-      );
+  async function getLoanDetailsWithAssociate(loan) {
+    if (selectedSearchAssociate) {
+      return mapLoan(loan, getAssociateName(selectedSearchAssociate));
     }
 
-    return mapLoan(
-      loan,
-      new Map([[associate.id, getAssociateName(associate)]])
-    );
-  }
-
-  function openCreateModal() {
-    reset({
-      amount: "",
-      interestRate: "",
-      termMonths: "",
-    });
-
-    setSelectedAssociate(null);
-    setAssociateError("");
-    setIsCreateOpen(true);
-  }
-
-  function closeCreateModal() {
-    reset();
-    setSelectedAssociate(null);
-    setAssociateError("");
-    setIsCreateOpen(false);
-  }
-
-  async function handleView(id) {
     try {
-      setDetailLoan(await getLoanWithAssociate(id));
-    } catch (error) {
-      console.error("Error consultando préstamo:", error);
+      const associate = await associateService.getById(loan.associateId);
 
+      return mapLoan(loan, getAssociateName(associate));
+    } catch {
+      return mapLoan(loan);
+    }
+  }
+
+  /* =========================
+     ESTADO
+  ========================= */
+
+  async function openStatus() {
+    try {
+      const data = await getSchedule(resultLoan);
+      setStatusLoan(data);
+    } catch (error) {
       notifyError(
         getErrorMessage(
           error,
-          "No fue posible consultar el préstamo."
+          "No fue posible consultar el estado del crédito."
         )
       );
     }
   }
 
-  async function handleInstallments(id) {
+  /* =========================
+     HISTORIAL
+  ========================= */
+
+  async function openHistory() {
     try {
-      const [loan, schedule] = await Promise.all([
-        getLoanWithAssociate(id),
-        getLoanInstallments(id),
-      ]);
+      const data = await getSchedule(resultLoan);
 
-      setInstallmentsLoan(loan);
-      setInstallments(schedule);
+      setHistoryLoan(data.loan);
+
+      setHistory(
+        data.installments.filter(
+          (installment) =>
+            installment.status === "PAID" ||
+            Number(installment.paidAmount || 0) > 0
+        )
+      );
     } catch (error) {
-      console.error("Error consultando cuotas:", error);
-
       notifyError(
         getErrorMessage(
           error,
-          "No fue posible consultar las cuotas del préstamo."
+          "No fue posible consultar el historial de pagos."
         )
       );
     }
   }
 
-  async function openPaymentModal(id) {
-    try {
-      const [loan, schedule] = await Promise.all([
-        getLoanWithAssociate(id),
-        getLoanInstallments(id),
-      ]);
+  /* =========================
+     PAGO
+  ========================= */
 
-      const pendingInstallments = schedule.filter(
+  async function openPayment() {
+    try {
+      const { loan, installments } = await getSchedule(resultLoan);
+
+      const pending = installments.filter(
         (installment) => installment.status === "PENDING"
       );
 
-      if (pendingInstallments.length === 0) {
+      if (!pending.length) {
         notifyError("El préstamo no tiene saldo pendiente.");
         return;
       }
 
-     const nextInstallment = pendingInstallments[0];
-
-/*
- * Calculamos el saldo pendiente REAL del préstamo.
- *
- * Cada cuota tiene:
- * - totalPayment: valor total de la cuota
- * - paidAmount: valor que ya se ha pagado de esa cuota
- *
- * Lo pendiente de cada cuota es:
- *
- * totalPayment - paidAmount
- *
- * Luego sumamos todas las cuotas pendientes.
- */
-const remainingBalance = pendingInstallments.reduce(
-  (total, installment) => {
-
-    const totalPayment =
-      Number(installment.totalPayment || 0);
-
-    const paidAmount =
-      Number(installment.paidAmount || 0);
-
-    const pendingAmount =
-      Math.max(
-        totalPayment - paidAmount,
-        0
+      const remainingBalance = Number(
+        pending
+          .reduce(
+            (total, installment) =>
+              total +
+              Math.max(
+                Number(installment.totalPayment || 0) -
+                  Number(installment.paidAmount || 0),
+                0
+              ),
+            0
+          )
+          .toFixed(2)
       );
-
-    return total + pendingAmount;
-  },
-  0
-);
 
       setPaymentLoan({
         ...loan,
-        pendingInstallments,
         remainingBalance,
-        nextInstallmentAmount: Number(
-          nextInstallment.totalPayment || 0
-        ),
+        nextInstallment: pending[0],
+        pending,
       });
 
       setPaymentAmount(
-        String(
-          Number(nextInstallment.totalPayment || 0)
-        )
+        Number(pending[0].totalPayment || 0).toFixed(2)
       );
-
       setPaymentType("INSTALLMENT");
     } catch (error) {
-      console.error("Error preparando el pago:", error);
-
       notifyError(
         getErrorMessage(
           error,
-          "No fue posible consultar el saldo pendiente del préstamo."
+          "No fue posible preparar el pago del crédito."
         )
       );
     }
   }
 
-  async function prepareLoanAction(id, type) {
+  async function submitPayment(event) {
+    event.preventDefault();
+
+    const amount = Number(Number(paymentAmount).toFixed(2));
+
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > paymentLoan.remainingBalance
+    ) {
+      notifyError(
+        "Ingresa un valor de pago válido dentro del saldo pendiente."
+      );
+      return;
+    }
+
     try {
-      setActionLoan(await getLoanWithAssociate(id));
-      setActionType(type);
-    } catch (error) {
-      console.error("Error consultando préstamo:", error);
+      await payLoanInstallment(paymentLoan.id, {
+        amount,
+        paymentType,
+      });
 
+      notifySuccess(
+        amount === paymentLoan.remainingBalance
+          ? "Préstamo pagado completamente."
+          : "Pago registrado correctamente."
+      );
+
+      setPaymentLoan(null);
+      setPaymentAmount("");
+      setPaymentType("INSTALLMENT");
+
+      await loadKpis();
+
+      if (selectedSearchAssociate) {
+        await selectAssociate(selectedSearchAssociate);
+      }
+    } catch (error) {
       notifyError(
-        getErrorMessage(
-          error,
-          "No fue posible consultar el préstamo."
-        )
+        getErrorMessage(error, "No fue posible registrar el pago.")
       );
     }
   }
+
+  /* =========================
+     APROBAR / RECHAZAR / DESEMBOLSAR
+  ========================= */
 
   async function submitLoanAction() {
-    if (!actionLoan) return;
-
     const actions = {
       approve: approveLoan,
       reject: rejectLoan,
       disburse: disburseLoan,
     };
 
-    const messages = {
-      approve: "Préstamo aprobado correctamente.",
-      reject: "Préstamo rechazado correctamente.",
-      disburse: "Préstamo desembolsado correctamente.",
-    };
+    const action = actions[actionType];
+
+    if (!actionLoan || !action) return;
 
     try {
       setIsActionSubmitting(true);
 
-      await actions[actionType](actionLoan.id);
+      await action(actionLoan.id);
+
+      notifySuccess("Estado del préstamo actualizado correctamente.");
 
       setActionLoan(null);
       setActionType("");
 
-      notifySuccess(messages[actionType]);
+      await loadKpis();
 
-      await loadLoans();
+      if (selectedSearchAssociate) {
+        await selectAssociate(selectedSearchAssociate);
+      }
     } catch (error) {
-      console.error("Error actualizando préstamo:", error);
-
       notifyError(
         getErrorMessage(
           error,
@@ -553,103 +659,70 @@ const remainingBalance = pendingInstallments.reduce(
     }
   }
 
-  async function submitPayment(event) {
-    event.preventDefault();
+  /* =========================
+     CREAR PRESTAMO
+  ========================= */
 
-    if (!paymentLoan) return;
+  async function openCreateModal() {
+    reset({
+      amount: "",
+      interestRate: "",
+      termMonths: "",
+    });
 
-    const amount = Number(paymentAmount);
-
-    const remainingBalance = Number(
-      paymentLoan.remainingBalance || 0
-    );
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      notifyError("Ingresa un valor de pago válido.");
-      return;
-    }
-
-    if (amount > remainingBalance) {
-      notifyError(
-        `El pago no puede ser superior al saldo pendiente de ${formatCurrency(
-          remainingBalance
-        )}.`
-      );
-      return;
-    }
-
-    if (!paymentType) {
-      notifyError("Selecciona el tipo de pago.");
-      return;
-    }
+    setSelectedAssociate(null);
+    setAssociateError("");
+    setIsCreateOpen(true);
 
     try {
-      await payLoanInstallment(paymentLoan.id, {
-        amount,
-        paymentType,
-      });
-
-      setPaymentLoan(null);
-      setPaymentAmount("");
-      setPaymentType("INSTALLMENT");
-
-      notifySuccess(
-        amount === remainingBalance
-          ? "Préstamo pagado completamente."
-          : "Pago registrado correctamente."
-      );
-
-      await loadLoans();
+      if (!associates.length) {
+        const data = await associateService.getAll();
+        setAssociates(data);
+      }
     } catch (error) {
-      console.error("Error registrando pago:", error);
-      console.error(
-        "Estado HTTP:",
-        error.response?.status
-      );
-      console.error(
-        "Respuesta del backend:",
-        error.response?.data
-      );
-
       notifyError(
         getErrorMessage(
           error,
-          "No fue posible registrar el pago."
+          "No fue posible cargar los asociados."
         )
       );
     }
   }
 
-  async function onSubmit({
-    amount,
-    interestRate,
-    termMonths,
-  }) {
+  function closeCreateModal() {
+    reset();
+    setSelectedAssociate(null);
+    setAssociateError("");
+    setIsCreateOpen(false);
+  }
+
+  async function submitCreate(data) {
     if (!selectedAssociate) {
-      setAssociateError(
-        "Selecciona un asociado para continuar."
-      );
+      setAssociateError("Selecciona un asociado para continuar.");
       return;
     }
 
     try {
       await createLoan({
         associateId: selectedAssociate.id,
-        amount: Number(amount),
-        interestRate: Number(interestRate),
-        termMonths: Number(termMonths),
+        amount: Number(data.amount),
+        interestRate: Number(data.interestRate),
+        termMonths: Number(data.termMonths),
       });
 
       closeCreateModal();
 
-      notifySuccess(
-        "Préstamo solicitado correctamente."
-      );
+      notifySuccess("Préstamo solicitado correctamente.");
 
-      await loadLoans();
+      await loadKpis();
+
+      if (
+        selectedSearchAssociate &&
+        selectedSearchAssociate.id === selectedAssociate.id
+      ) {
+        await selectAssociate(selectedSearchAssociate);
+      }
     } catch (error) {
-      console.error("Error creando préstamo:", error);
-
       notifyError(
         getErrorMessage(
           error,
@@ -659,45 +732,9 @@ const remainingBalance = pendingInstallments.reduce(
     }
   }
 
-  function getOptions(loan) {
-    const options = [
-      {
-        label: "Ver cuotas",
-        onClick: () => handleInstallments(loan.id),
-      },
-    ];
-
-    if (loan.status === "PENDING") {
-      options.push({
-        label: "Aprobar préstamo",
-        onClick: () =>
-          prepareLoanAction(loan.id, "approve"),
-      });
-
-      options.push({
-        label: "Rechazar préstamo",
-        onClick: () =>
-          prepareLoanAction(loan.id, "reject"),
-      });
-    }
-
-    if (loan.status === "APPROVED") {
-      options.push({
-        label: "Desembolsar préstamo",
-        onClick: () =>
-          prepareLoanAction(loan.id, "disburse"),
-      });
-    }
-
-    if (loan.status === "DISBURSED") {
-      options.push({
-        label: "Registrar pago",
-        onClick: () => openPaymentModal(loan.id),
-      });
-    }
-
-    return options;
-  }
+  const scheduleSummary = statusLoan
+    ? summarizeInstallments(statusLoan.installments)
+    : null;
 
   return (
     <>
@@ -705,219 +742,263 @@ const remainingBalance = pendingInstallments.reduce(
         <PageHeader
           eyebrow="Gestión de préstamos"
           title="Préstamos"
-          subtitle="Gestiona las solicitudes, aprobaciones y desembolsos de préstamos."
+          subtitle="Consulta y gestiona la información de los créditos de los asociados."
           action={
             <Button onClick={openCreateModal}>
-              <Plus size={18} strokeWidth={2.5} />
+              <Plus size={18} />
               Nuevo préstamo
             </Button>
           }
         />
 
-        <SummaryCards items={summaryCards} />
-
-        <section className="grid gap-5 xl:grid-cols-3">
-          <DataSection
-            className="p-6 xl:col-span-2"
-            description="El backend no expone histórico de cartera para construir una gráfica sin datos ficticios."
-            title="Estado de la cartera"
-          >
-            <EmptyState
-              icon={<CircleDollarSign size={24} />}
-              title="Histórico no disponible"
-              description="Los indicadores se calculan con los préstamos registrados actualmente."
+        {/* INDICADORES */}
+        {kpis && (
+          <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={<BanknoteArrowDown size={20} />}
+              label="Dinero prestado"
+              value={formatCurrency(kpis.disbursedAmount)}
             />
-          </DataSection>
 
-          <Card className="p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-extrabold tracking-tight text-slate-900">
-                  Atención requerida
-                </h2>
+            <StatCard
+              icon={<CircleDollarSign size={20} />}
+              label="Cartera vigente"
+              value={formatCurrency(kpis.outstandingPrincipal)}
+            />
 
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Estados reales del portafolio.
-                </p>
-              </div>
+            <StatCard
+              icon={<CreditCard size={20} />}
+              label="Créditos activos"
+              value={kpis.activeLoans ?? 0}
+            />
 
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600">
-                <BanknoteArrowDown size={21} />
-              </div>
+            <StatCard
+              icon={<ClipboardList size={20} />}
+              label="Total de créditos"
+              value={kpis.totalLoans ?? 0}
+            />
+          </div>
+        )}
+
+        {/* BUSCADOR */}
+        <Card className="border-t-4 border-t-[#163A63] p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#EAF2F8] text-[#163A63]">
+              <Search size={20} />
             </div>
 
-            <div className="mt-6 divide-y divide-slate-100">
-              <Metric
-                label="Solicitudes pendientes"
-                value={
-                  loans.filter(
-                    (loan) => loan.status === "PENDING"
-                  ).length
-                }
-                variant="warning"
+            <div>
+              <h2 className="text-xl font-extrabold tracking-tight text-[#1B2A41]">
+                Consultar crédito
+              </h2>
+
+              <p className="mt-1 text-sm font-medium text-[#536273]">
+                Busca un asociado para consultar únicamente sus créditos.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="mt-5 flex flex-col gap-3 sm:flex-row"
+            onSubmit={handleSearch}
+          >
+            <div className="relative flex-1">
+              <Input
+                aria-label="Buscar asociado"
+                leadingAdornment={<Search size={18} />}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setSelectedSearchAssociate(null);
+                  setSearched(false);
+                  setResultLoan(null);
+                  setResultSummary(null);
+                  setMatchingLoans([]);
+                  setSearchMessage("");
+                }}
+                placeholder="Escribe el nombre del asociado..."
+                value={query}
               />
 
-              <Metric
-                label="Préstamos aprobados"
-                value={
-                  loans.filter(
-                    (loan) => loan.status === "APPROVED"
-                  ).length
-                }
-                variant="success"
-              />
+              {/* AUTOCOMPLETADO */}
+              {associateSuggestions.length > 0 && (
+                <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-lg border border-[#dce5ed] bg-white shadow-xl">
+                  {associateSuggestions.map((associate) => (
+                    <button
+                      key={associate.id}
+                      type="button"
+                      onClick={() => void selectAssociate(associate)}
+                      className="flex w-full items-center justify-between border-b border-[#edf1f4] px-4 py-3 text-left last:border-b-0 hover:bg-[#F4F6F8]"
+                    >
+                      <span className="font-bold text-[#1B2A41]">
+                        {getAssociateName(associate)}
+                      </span>
 
-              <Metric
-                label="Préstamos desembolsados"
-                value={
-                  loans.filter(
-                    (loan) => loan.status === "DISBURSED"
-                  ).length
-                }
-                variant="neutral"
-              />
+                      <span className="ml-3 shrink-0 text-xs font-extrabold text-[#536273]">
+                        {associate.code || `ID ${associate.id}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Button
+              className="w-full sm:w-auto"
+              disabled={searching}
+              type="submit"
+            >
+              <Search size={18} />
+              {searching ? "Buscando..." : "Buscar"}
+            </Button>
+
+            {(query || searched) && (
+              <Button
+                className="w-full sm:w-auto"
+                onClick={clearSearch}
+                type="button"
+                variant="secondary"
+              >
+                <X size={17} />
+                Limpiar
+              </Button>
+            )}
+          </form>
+
+          <p className="mt-3 text-xs font-medium text-[#536273]">
+            Ej.: Orlando Enrique, ASO-0001 o número de crédito
+          </p>
+        </Card>
+
+        {/* RESULTADOS */}
+        {searching ? (
+          <Card>
+            <Loader label="Consultando créditos..." />
+          </Card>
+        ) : searchMessage ? (
+          <Card>
+            <EmptyState
+              icon={<Search size={28} />}
+              title={
+                searchMessage.includes("no tiene créditos")
+                  ? "Sin créditos registrados"
+                  : "Consulta de crédito"
+              }
+              description={searchMessage}
+              action={
+                <Button onClick={clearSearch} variant="secondary">
+                  Nueva consulta
+                </Button>
+              }
+            />
+          </Card>
+        ) : matchingLoans.length > 0 ? (
+          <Card>
+            <div className="border-b border-[#dce5ed] pb-4">
+              <h2 className="text-xl font-extrabold text-[#1B2A41]">
+                Créditos de{" "}
+                {selectedSearchAssociate
+                  ? getAssociateName(selectedSearchAssociate)
+                  : "el asociado"}
+              </h2>
+
+              <p className="mt-1 text-sm font-medium text-[#536273]">
+                Selecciona un crédito para consultar su información.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {matchingLoans.map((loan) => (
+                <div
+                  key={loan.id}
+                  className="flex flex-col gap-4 rounded-lg border border-[#dce5ed] p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-extrabold text-[#1B2A41]">
+                      Crédito {loan.number}
+                    </p>
+
+                    <p className="mt-1 text-sm font-medium text-[#536273]">
+                      {loan.associate}
+                    </p>
+
+                    <p className="mt-2 text-sm font-semibold text-[#536273]">
+                      Monto:{" "}
+                      <span className="text-[#1B2A41]">
+                        {formatCurrency(loan.amount)}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Badge {...statusStyle(loan.status)}>
+                      {loan.statusLabel}
+                    </Badge>
+
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            const mappedLoan = mapLoan(
+                              loan,
+                              selectedSearchAssociate
+                                ? getAssociateName(selectedSearchAssociate)
+                                : loan.associate
+                            );
+
+                            setMatchingLoans([]);
+                            setResultLoan(mappedLoan);
+
+                            try {
+                              const installments =
+                                await getLoanInstallments(mappedLoan.id);
+
+                              setResultSummary(
+                                summarizeInstallments(installments)
+                              );
+                            } catch {
+                              setResultSummary(null);
+                            }
+                          } catch {
+                            notifyError(
+                              "No fue posible consultar el crédito seleccionado."
+                            );
+                          }
+                        })();
+                      }}
+                    >
+                      Consultar crédito
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           </Card>
-        </section>
-
-        <FilterBar
-          filters={loanFilters}
-          gridClassName="xl:grid-cols-[minmax(0,1.8fr)_minmax(10rem,0.65fr)_auto]"
-          idPrefix="loans"
-          onChange={(_, value) => setStatusFilter(value)}
-          onReset={() => {
-            setSearch("");
-            setStatusFilter("Todos");
-          }}
-          onSearchChange={setSearch}
-          onSearchChange={setSearch}
-          searchAriaLabel="Buscar préstamo"
-          searchLabel="Buscar préstamo"
-          searchPlaceholder="Número o asociado"
-          searchValue={search}
-          values={{ status: statusFilter }}
-        />
-
-        <DataSection
-          className="overflow-hidden p-0"
-          description={`${loans.length} préstamos registrados.`}
-          headerClassName="border-b border-slate-200 px-6 py-5"
-          title="Listado de préstamos"
-        >
-          {isLoading ? (
-            <Loader label="Cargando préstamos..." />
-          ) : loadError ? (
+        ) : resultLoan ? (
+          <LoanResult
+            loan={resultLoan}
+            summary={resultSummary}
+            onDetail={() => setDetailLoan(resultLoan)}
+            onHistory={openHistory}
+            onPayment={openPayment}
+            onStatus={openStatus}
+            onAction={(type) => {
+              setActionLoan(resultLoan);
+              setActionType(type);
+            }}
+          />
+        ) : !searched ? (
+          <Card>
             <EmptyState
-              icon={<HandCoins size={24} />}
-              title="No fue posible cargar los préstamos"
-              description={loadError}
-              action={
-                <Button onClick={loadLoans}>
-                  Reintentar
-                </Button>
-              }
+              icon={<Search size={28} />}
+              title="Consulta un crédito"
+              description="Escribe el nombre de un asociado para ver sus créditos."
             />
-          ) : loans.length === 0 ? (
-            <EmptyState
-              icon={<HandCoins size={24} />}
-              title="No hay préstamos registrados."
-              description="Cuando registres un préstamo, su información aparecerá en este listado."
-              action={
-                <Button onClick={openCreateModal}>
-                  <Plus
-                    size={18}
-                    strokeWidth={2.5}
-                  />
-                  Nuevo préstamo
-                </Button>
-              }
-            />
-          ) : filteredLoans.length === 0 ? (
-            <EmptyState
-              icon={<HandCoins size={24} />}
-              title="No hay préstamos para mostrar"
-              description="Ajusta los filtros para ver los préstamos registrados."
-            />
-          ) : (
-            <Table className="min-w-300">
-              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-6 py-4">Número</th>
-                  <th className="px-6 py-4">Asociado</th>
-                  <th className="px-6 py-4">Monto</th>
-                  <th className="px-6 py-4">Tasa</th>
-                  <th className="px-6 py-4">Plazo</th>
-                  <th className="px-6 py-4">Estado</th>
-                  <th className="px-6 py-4">
-                    Fecha solicitud
-                  </th>
-                  <th className="px-6 py-4 text-right">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-200">
-                {filteredLoans.map((loan) => (
-                  <tr
-                    className="transition hover:bg-slate-50/70"
-                    key={loan.id}
-                  >
-                    <td className="px-6 py-4 text-sm font-extrabold text-slate-800">
-                      {loan.number}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm font-bold text-slate-800">
-                      {loan.associate}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm font-extrabold text-slate-800">
-                      {formatCurrency(loan.amount)}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-600">
-                      {loan.interestRate}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-600">
-                      {`${loan.termMonths} meses`}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <Badge
-                        variant={
-                          statusVariant[loan.statusLabel] ||
-                          "neutral"
-                        }
-                      >
-                        {loan.statusLabel}
-                      </Badge>
-                    </td>
-
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-600">
-                      {formatDate(loan.requestedAt)}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <ActionMenu
-                        label={loan.number}
-                        onEdit={() =>
-                          setIsEditUnavailableOpen(true)
-                        }
-                        onView={() =>
-                          handleView(loan.id)
-                        }
-                        options={getOptions(loan)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </DataSection>
+          </Card>
+        ) : null}
       </PageContainer>
 
+      {/* NUEVO PRESTAMO */}
       <Modal
         isOpen={isCreateOpen}
         onClose={closeCreateModal}
@@ -926,10 +1007,11 @@ const remainingBalance = pendingInstallments.reduce(
       >
         <form
           className="space-y-5"
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleSubmit(submitCreate)}
         >
           <AssociateSearch
             associates={associates}
+            selectedAssociate={selectedAssociate}
             onClear={() => {
               setSelectedAssociate(null);
               setAssociateError("");
@@ -938,27 +1020,25 @@ const remainingBalance = pendingInstallments.reduce(
               setSelectedAssociate(associate);
               setAssociateError("");
             }}
-            selectedAssociate={selectedAssociate}
           />
 
           {associateError && (
-            <p className="text-sm font-semibold text-rose-600">
+            <p className="text-sm font-semibold text-[#D92D20]">
               {associateError}
             </p>
           )}
 
           <div className="grid gap-4 md:grid-cols-3">
             <Field
-              label="Monto"
               error={errors.amount?.message}
+              label="Monto"
             >
               <Input
                 {...register("amount", {
                   required: "El monto es obligatorio",
                   min: {
                     value: 1,
-                    message:
-                      "Ingresa un valor mayor a cero",
+                    message: "Ingresa un valor mayor a cero",
                   },
                 })}
                 min="1"
@@ -967,17 +1047,15 @@ const remainingBalance = pendingInstallments.reduce(
             </Field>
 
             <Field
-              label="Tasa de interés"
               error={errors.interestRate?.message}
+              label="Tasa de interés"
             >
               <Input
                 {...register("interestRate", {
-                  required:
-                    "La tasa es obligatoria",
+                  required: "La tasa es obligatoria",
                   min: {
                     value: 0.01,
-                    message:
-                      "La tasa debe ser mayor a cero",
+                    message: "La tasa debe ser mayor a cero",
                   },
                 })}
                 min="0.01"
@@ -987,17 +1065,15 @@ const remainingBalance = pendingInstallments.reduce(
             </Field>
 
             <Field
-              label="Plazo (meses)"
               error={errors.termMonths?.message}
+              label="Plazo (meses)"
             >
               <Input
                 {...register("termMonths", {
-                  required:
-                    "El plazo es obligatorio",
+                  required: "El plazo es obligatorio",
                   min: {
                     value: 1,
-                    message:
-                      "El plazo debe ser mayor a cero",
+                    message: "El plazo debe ser mayor a cero",
                   },
                 })}
                 min="1"
@@ -1006,12 +1082,7 @@ const remainingBalance = pendingInstallments.reduce(
             </Field>
           </div>
 
-          <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-600">
-            El número, estado y fecha de solicitud
-            son generados por el backend.
-          </p>
-
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+          <div className="flex justify-end gap-3 border-t border-[#dce5ed] pt-4">
             <Button
               onClick={closeCreateModal}
               type="button"
@@ -1020,217 +1091,139 @@ const remainingBalance = pendingInstallments.reduce(
               Cancelar
             </Button>
 
-            <Button
-              disabled={isSubmitting}
-              type="submit"
-            >
-              {isSubmitting
-                ? "Guardando..."
-                : "Guardar solicitud"}
+            <Button disabled={isSubmitting} type="submit">
+              {isSubmitting ? "Guardando..." : "Guardar solicitud"}
             </Button>
           </div>
         </form>
       </Modal>
 
+      {/* DETALLE */}
       <Modal
         isOpen={Boolean(detailLoan)}
         onClose={() => setDetailLoan(null)}
         size="lg"
-        title={`Préstamo ${detailLoan?.number ?? ""}`}
+        title="Detalle del crédito"
       >
-        {detailLoan && (
+        {detailLoan && <LoanDetails loan={detailLoan} />}
+      </Modal>
+
+      {/* ESTADO */}
+      <Modal
+        isOpen={Boolean(statusLoan)}
+        onClose={() => setStatusLoan(null)}
+        size="lg"
+        title="Estado del crédito"
+      >
+        {statusLoan && scheduleSummary && (
           <div className="space-y-5">
-            <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4">
-              <div>
-                <p className="text-sm font-bold text-slate-500">
-                  Asociado
-                </p>
+            <CreditSummary
+              loan={statusLoan.loan}
+              summary={scheduleSummary}
+            />
 
-                <p className="mt-1 text-base font-extrabold text-slate-900">
-                  {detailLoan.associate}
-                </p>
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <DetailItem
+                label="Cuotas pagadas"
+                value={scheduleSummary.paid.length}
+              />
 
-              <Badge
-                variant={
-                  statusVariant[
-                    detailLoan.statusLabel
-                  ] || "neutral"
+              <DetailItem
+                label="Cuotas pendientes"
+                value={scheduleSummary.pending.length}
+              />
+
+              <DetailItem
+                label="Próxima cuota"
+                value={
+                  scheduleSummary.next
+                    ? formatCurrency(scheduleSummary.next.totalPayment)
+                    : null
                 }
-              >
-                {detailLoan.statusLabel}
-              </Badge>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <DetailItem
-                label="Número de préstamo"
-                value={detailLoan.number}
               />
 
               <DetailItem
-                label="ID del asociado"
-                value={detailLoan.associateId}
-              />
-
-              <DetailItem
-                label="Monto"
-                value={formatCurrency(
-                  detailLoan.amount
-                )}
-              />
-
-              <DetailItem
-                label="Tasa de interés"
-                value={detailLoan.interestRate}
-              />
-
-              <DetailItem
-                label="Plazo"
-                value={`${detailLoan.termMonths} meses`}
-              />
-
-              <DetailItem
-                label="Fecha de solicitud"
-                value={formatDate(
-                  detailLoan.requestedAt
-                )}
-              />
-
-              <DetailItem
-                label="Fecha de aprobación"
-                value={formatDate(
-                  detailLoan.approvedAt
-                )}
-              />
-            </div>
-
-            <div className="flex justify-end border-t border-slate-200 pt-4">
-              <Button
-                onClick={() =>
-                  setDetailLoan(null)
+                label="Fecha próxima cuota"
+                value={
+                  scheduleSummary.next
+                    ? formatDate(scheduleSummary.next.dueDate)
+                    : null
                 }
-                variant="secondary"
-              >
-                Cerrar
-              </Button>
+              />
+
+              <DetailItem
+                accent
+                label="Saldo pendiente"
+                value={formatCurrency(scheduleSummary.balance)}
+              />
             </div>
           </div>
         )}
       </Modal>
 
+      {/* HISTORIAL */}
       <Modal
-        isOpen={Boolean(installmentsLoan)}
+        isOpen={Boolean(historyLoan)}
         onClose={() => {
-          setInstallmentsLoan(null);
-          setInstallments([]);
+          setHistoryLoan(null);
+          setHistory([]);
         }}
         size="lg"
-        title={`Cuotas ${installmentsLoan?.number ?? ""}`}
+        title="Historial de pagos"
       >
-        {installmentsLoan &&
-          (installments.length === 0 ? (
-            <EmptyState
-              icon={<HandCoins size={24} />}
-              title="No hay cuotas registradas"
-              description="El cronograma se genera automáticamente al desembolsar el préstamo."
-            />
-          ) : (
-            <Table className="min-w-250">
-              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">
-                    Cuota
-                  </th>
-                  <th className="px-4 py-3">
-                    Vencimiento
-                  </th>
-                  <th className="px-4 py-3">
-                    Capital
-                  </th>
-                  <th className="px-4 py-3">
-                    Interés
-                  </th>
-                  <th className="px-4 py-3">
-                    Total
-                  </th>
-                  <th className="px-4 py-3">
-                    Saldo
-                  </th>
-                  <th className="px-4 py-3">
-                    Estado
-                  </th>
-                </tr>
-              </thead>
+        {historyLoan &&
+          (history.length ? (
+            <div className="space-y-3">
+              {history.map((item) => (
+                <div
+                  key={item.installmentNumber}
+                  className="grid gap-2 rounded-lg border border-[#dce5ed] p-4 sm:grid-cols-5"
+                >
+                  <DetailItem
+                    label="Fecha"
+                    value={formatDate(item.paidAt)}
+                  />
 
-              <tbody className="divide-y divide-slate-200">
-                {installments.map(
-                  (installment) => (
-                    <tr
-                      key={
-                        installment.installmentNumber
-                      }
+                  <DetailItem
+                    label="Cuota"
+                    value={item.installmentNumber}
+                  />
+
+                  <DetailItem
+                    label="Valor pagado"
+                    value={formatCurrency(item.paidAmount)}
+                  />
+
+                  <DetailItem
+                    label="Saldo"
+                    value={formatCurrency(item.remainingBalance)}
+                  />
+
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.09em] text-[#536273]">
+                      Estado
+                    </p>
+
+                    <Badge
+                      className="mt-1.5"
+                      variant="success"
                     >
-                      <td className="px-4 py-3">
-                        {
-                          installment.installmentNumber
-                        }
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatDate(
-                          installment.dueDate
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatCurrency(
-                          installment.principal
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatCurrency(
-                          installment.interest
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatCurrency(
-                          installment.totalPayment
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {formatCurrency(
-                          installment.remainingBalance
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            installment.status ===
-                            "PAID"
-                              ? "success"
-                              : "warning"
-                          }
-                        >
-                          {installment.status ===
-                          "PAID"
-                            ? "Pagada"
-                            : "Pendiente"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  )
-                )}
-              </tbody>
-            </Table>
+                      Pagada
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<ClipboardList size={26} />}
+              title="No hay pagos registrados"
+              description="Este crédito no tiene pagos disponibles en su cronograma."
+            />
           ))}
       </Modal>
 
-      {/* MODAL DE PAGOS */}
+      {/* PAGO */}
       <Modal
         isOpen={Boolean(paymentLoan)}
         onClose={() => {
@@ -1239,96 +1232,46 @@ const remainingBalance = pendingInstallments.reduce(
           setPaymentType("INSTALLMENT");
         }}
         size="sm"
-        title={`Registrar pago ${
-          paymentLoan?.number ?? ""
-        }`}
+        title="Pagar crédito"
       >
         {paymentLoan && (
-          <form
-            className="space-y-5"
-            onSubmit={submitPayment}
-          >
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="space-y-2 text-sm">
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Asociado:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {paymentLoan.associate}
-                  </span>
-                </p>
+          <form className="space-y-5" onSubmit={submitPayment}>
+            <div className="rounded-lg bg-[#F4F6F8] p-4">
+              <p className="font-extrabold text-[#1B2A41]">
+                {paymentLoan.number}
+              </p>
 
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Préstamo:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {paymentLoan.number}
-                  </span>
-                </p>
+              <p className="mt-1 text-sm font-medium text-[#536273]">
+                {paymentLoan.associate}
+              </p>
 
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Saldo pendiente:
-                  </span>{" "}
-                  <span className="font-extrabold text-emerald-600">
-                    {formatCurrency(
-                      paymentLoan.remainingBalance
-                    )}
-                  </span>
-                </p>
+              <p className="mt-4 text-xs font-extrabold uppercase tracking-[0.09em] text-[#536273]">
+                Saldo pendiente
+              </p>
 
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Próxima cuota:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {formatCurrency(
-                      paymentLoan.nextInstallmentAmount
-                    )}
-                  </span>
-                </p>
-              </div>
+              <p className="mt-1 text-xl font-extrabold text-[#16805C]">
+                {formatCurrency(paymentLoan.remainingBalance)}
+              </p>
             </div>
 
             <Field label="Tipo de pago">
               <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="min-h-10 w-full rounded-lg border border-[#c9d5df] bg-white px-3 text-sm font-medium text-[#1B2A41] outline-none focus:border-[#1769E0] focus:ring-3 focus:ring-[#EAF2F8]"
                 value={paymentType}
                 onChange={(event) => {
-                  const type =
-                    event.target.value;
+                  const type = event.target.value;
 
                   setPaymentType(type);
 
-                  if (
-                    type === "INSTALLMENT"
-                  ) {
-                    setPaymentAmount(
-                      String(
-                        paymentLoan.nextInstallmentAmount
-                      )
-                    );
-                  }
-
-                  if (
-                    type ===
-                    "FULL_PAYMENT"
-                  ) {
-                    setPaymentAmount(
-                      String(
-                        paymentLoan.remainingBalance
-                      )
-                    );
-                  }
-
-                  if (
-                    type ===
-                    "PRINCIPAL_ABATEMENT"
-                  ) {
-                    setPaymentAmount("");
-                  }
+                  setPaymentAmount(
+                    type === "FULL_PAYMENT"
+                      ? Number(paymentLoan.remainingBalance).toFixed(2)
+                      : type === "INSTALLMENT"
+                      ? Number(
+                          paymentLoan.nextInstallment.totalPayment || 0
+                        ).toFixed(2)
+                      : ""
+                  );
                 }}
               >
                 <option value="INSTALLMENT">
@@ -1347,14 +1290,10 @@ const remainingBalance = pendingInstallments.reduce(
 
             <Field label="Valor a pagar">
               <Input
+                max={paymentLoan.remainingBalance}
                 min="0.01"
-                max={
-                  paymentLoan.remainingBalance
-                }
                 onChange={(event) =>
-                  setPaymentAmount(
-                    event.target.value
-                  )
+                  setPaymentAmount(event.target.value)
                 }
                 required
                 step="0.01"
@@ -1363,76 +1302,9 @@ const remainingBalance = pendingInstallments.reduce(
               />
             </Field>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-              <p className="text-sm font-semibold text-blue-700">
-                Puedes pagar una cuota,
-                realizar un abono extraordinario
-                o cancelar completamente el saldo
-                del préstamo.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex justify-end gap-3 border-t border-[#dce5ed] pt-4">
               <Button
-                onClick={() => {
-                  setPaymentType(
-                    "INSTALLMENT"
-                  );
-
-                  setPaymentAmount(
-                    String(
-                      paymentLoan.nextInstallmentAmount
-                    )
-                  );
-                }}
-                type="button"
-                variant="secondary"
-              >
-                Pagar cuota
-              </Button>
-
-              <Button
-                onClick={() => {
-                  setPaymentType(
-                    "FULL_PAYMENT"
-                  );
-
-                  setPaymentAmount(
-                    String(
-                      paymentLoan.remainingBalance
-                    )
-                  );
-                }}
-                type="button"
-              >
-                Pagar todo
-              </Button>
-            </div>
-
-            <Button
-              onClick={() => {
-                setPaymentType(
-                  "PRINCIPAL_ABATEMENT"
-                );
-
-                setPaymentAmount("");
-              }}
-              type="button"
-              variant="secondary"
-              className="w-full"
-            >
-              Abono a capital
-            </Button>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-              <Button
-                onClick={() => {
-                  setPaymentLoan(null);
-                  setPaymentAmount("");
-                  setPaymentType(
-                    "INSTALLMENT"
-                  );
-                }}
+                onClick={() => setPaymentLoan(null)}
                 type="button"
                 variant="secondary"
               >
@@ -1440,13 +1312,14 @@ const remainingBalance = pendingInstallments.reduce(
               </Button>
 
               <Button type="submit">
-                Registrar pago
+                Continuar con el pago
               </Button>
             </div>
           </form>
         )}
       </Modal>
 
+      {/* ACCIONES */}
       <Modal
         isOpen={Boolean(actionLoan)}
         onClose={() => {
@@ -1460,70 +1333,35 @@ const remainingBalance = pendingInstallments.reduce(
       >
         {actionLoan && (
           <div className="space-y-5">
-            <p className="text-sm font-medium text-slate-600">
+            <p className="text-sm font-medium text-[#536273]">
               ¿Confirmas{" "}
               {actionType === "approve"
                 ? "la aprobación"
                 : actionType === "reject"
                 ? "el rechazo"
                 : "el desembolso"}{" "}
-              del préstamo{" "}
-              <span className="font-extrabold text-slate-900">
+              del crédito{" "}
+              <strong className="text-[#1B2A41]">
                 {actionLoan.number}
-              </span>
+              </strong>
               ?
             </p>
 
-            {actionType === "approve" && (
-              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Préstamo:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {actionLoan.number}
-                  </span>
-                </p>
-
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Asociado:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {actionLoan.associate}
-                  </span>
-                </p>
-
-                <p>
-                  <span className="font-bold text-slate-500">
-                    Monto:
-                  </span>{" "}
-                  <span className="font-extrabold text-slate-800">
-                    {formatCurrency(
-                      actionLoan.amount
-                    )}
-                  </span>
-                </p>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+            <div className="flex justify-end gap-3 border-t border-[#dce5ed] pt-4">
               <Button
                 disabled={isActionSubmitting}
                 onClick={() => {
                   setActionLoan(null);
                   setActionType("");
                 }}
-                type="button"
                 variant="secondary"
               >
-                Volver
+                Cancelar
               </Button>
 
               <Button
                 disabled={isActionSubmitting}
                 onClick={submitLoanAction}
-                type="button"
               >
                 {isActionSubmitting
                   ? "Procesando..."
@@ -1534,81 +1372,298 @@ const remainingBalance = pendingInstallments.reduce(
         )}
       </Modal>
 
-      <Modal
-        isOpen={isEditUnavailableOpen}
-        onClose={() =>
-          setIsEditUnavailableOpen(false)
-        }
-        size="sm"
-        title="Edición no disponible"
-      >
-        <div className="space-y-4">
-          <p className="text-sm font-semibold text-slate-600">
-            La edición de préstamos todavía no
-            está disponible en el backend.
-          </p>
-
-          <div className="flex justify-end">
-            <Button
-              onClick={() =>
-                setIsEditUnavailableOpen(false)
-              }
-              type="button"
-              variant="secondary"
-            >
-              Cerrar
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
       <ToastProvider />
     </>
   );
 }
 
-function Metric({ label, value, variant }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <p className="text-sm font-semibold text-slate-600">
-        {label}
-      </p>
+function LoanResult({
+  loan,
+  summary,
+  onDetail,
+  onHistory,
+  onPayment,
+  onStatus,
+  onAction,
+}) {
+  const status = statusStyle(loan.status);
 
-      <Badge variant={variant}>
-        {value}
-      </Badge>
+  return (
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,.8fr)]">
+      <Card className="overflow-hidden p-0">
+        <div className="flex flex-col gap-4 border-b border-[#dce5ed] bg-[#fbfcfd] px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#245B8F]">
+              Resultado de la consulta
+            </p>
+
+            <h2 className="mt-1 text-xl font-extrabold text-[#1B2A41]">
+              Información del crédito
+            </h2>
+
+            <p className="mt-1 text-sm font-medium text-[#536273]">
+              {loan.number}
+            </p>
+          </div>
+
+          <Badge {...status}>{loan.statusLabel}</Badge>
+        </div>
+
+        <div className="grid gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailItem
+            label="Número de crédito"
+            value={loan.number}
+          />
+
+          <DetailItem
+            label="Asociado"
+            value={loan.associate}
+          />
+
+          <DetailItem
+            label="Monto original"
+            value={formatCurrency(loan.amount)}
+          />
+
+          <DetailItem
+            label="Tasa"
+            value={
+              loan.interestRate != null
+                ? `${loan.interestRate}%`
+                : null
+            }
+          />
+
+          <DetailItem
+            label="Plazo"
+            value={
+              loan.termMonths != null
+                ? `${loan.termMonths} meses`
+                : null
+            }
+          />
+
+          <DetailItem
+            label="Fecha de aprobación"
+            value={formatDate(loan.approvedAt)}
+          />
+
+          <DetailItem
+            accent
+            label="Saldo pendiente"
+            value={
+              summary
+                ? formatCurrency(summary.balance)
+                : null
+            }
+          />
+
+          <DetailItem
+            label="Próxima cuota"
+            value={
+              summary?.next
+                ? formatCurrency(summary.next.totalPayment)
+                : null
+            }
+          />
+
+          <DetailItem
+            label="Fecha próxima cuota"
+            value={
+              summary?.next
+                ? formatDate(summary.next.dueDate)
+                : null
+            }
+          />
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="text-lg font-extrabold text-[#1B2A41]">
+          Acciones del crédito
+        </h2>
+
+        <p className="mt-1 text-sm font-medium text-[#536273]">
+          Gestiona la información disponible del crédito.
+        </p>
+
+        <div className="mt-5 grid gap-2">
+          <Button onClick={onPayment}>
+            <CreditCard size={17} />
+            Pagar crédito
+          </Button>
+
+          <Button onClick={onStatus} variant="secondary">
+            <CircleDollarSign size={17} />
+            Ver estado del crédito
+          </Button>
+
+          <Button onClick={onHistory} variant="secondary">
+            <ClipboardList size={17} />
+            Historial de pagos
+          </Button>
+
+          <Button onClick={onDetail} variant="secondary">
+            <FileText size={17} />
+            Ver detalle del crédito
+          </Button>
+
+          {loan.status === "PENDING" && (
+            <>
+              <Button
+                onClick={() => onAction("approve")}
+                variant="secondary"
+              >
+                Aprobar crédito
+              </Button>
+
+              <Button
+                onClick={() => onAction("reject")}
+                variant="ghost"
+              >
+                Rechazar crédito
+              </Button>
+            </>
+          )}
+
+          {loan.status === "APPROVED" && (
+            <Button
+              onClick={() => onAction("disburse")}
+              variant="secondary"
+            >
+              <BanknoteArrowDown size={17} />
+              Desembolsar crédito
+            </Button>
+          )}
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function CreditSummary({ loan }) {
+  const status = statusStyle(loan.status);
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg bg-[#F4F6F8] p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-xs font-extrabold uppercase tracking-[0.09em] text-[#536273]">
+          Estado actual
+        </p>
+
+        <p className="mt-1 text-lg font-extrabold text-[#1B2A41]">
+          {loan.number}
+        </p>
+      </div>
+
+      <Badge {...status}>{loan.statusLabel}</Badge>
     </div>
   );
 }
 
-function Field({ label, error, children }) {
+function LoanDetails({ loan }) {
+  const status = statusStyle(loan.status);
+
   return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-bold text-slate-700">
-        {label}
-      </span>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between rounded-lg bg-[#F4F6F8] p-4">
+        <div>
+          <p className="text-xs font-extrabold uppercase tracking-[0.09em] text-[#536273]">
+            Asociado
+          </p>
 
-      {children}
+          <p className="mt-1 font-extrabold text-[#1B2A41]">
+            {loan.associate}
+          </p>
+        </div>
 
-      {error && (
-        <p className="mt-1 text-sm font-semibold text-rose-600">
-          {error}
-        </p>
-      )}
-    </label>
-  );
-}
+        <Badge {...status}>{loan.statusLabel}</Badge>
+      </div>
 
-function DetailItem({ label, value }) {
-  return (
-    <div>
-      <p className="text-xs font-bold text-slate-500">
-        {label}
-      </p>
+      <section>
+        <h3 className="text-sm font-extrabold uppercase tracking-[0.1em] text-[#245B8F]">
+          Datos del crédito
+        </h3>
 
-      <p className="mt-1 text-sm font-extrabold text-slate-800">
-        {value}
-      </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <DetailItem
+            label="Número de crédito"
+            value={loan.number}
+          />
+
+          <DetailItem
+            label="Estado"
+            value={loan.statusLabel}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-extrabold uppercase tracking-[0.1em] text-[#245B8F]">
+          Información del asociado
+        </h3>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <DetailItem
+            label="Asociado"
+            value={loan.associate}
+          />
+
+          <DetailItem
+            label="ID del asociado"
+            value={loan.associateId}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-extrabold uppercase tracking-[0.1em] text-[#245B8F]">
+          Condiciones del crédito
+        </h3>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <DetailItem
+            label="Monto original"
+            value={formatCurrency(loan.amount)}
+          />
+
+          <DetailItem
+            label="Tasa de interés"
+            value={
+              loan.interestRate != null
+                ? `${loan.interestRate}%`
+                : null
+            }
+          />
+
+          <DetailItem
+            label="Plazo"
+            value={
+              loan.termMonths != null
+                ? `${loan.termMonths} meses`
+                : null
+            }
+          />
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-extrabold uppercase tracking-[0.1em] text-[#245B8F]">
+          Fechas
+        </h3>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <DetailItem
+            label="Fecha de solicitud"
+            value={formatDate(loan.requestedAt)}
+          />
+
+          <DetailItem
+            label="Fecha de aprobación / desembolso"
+            value={formatDate(loan.approvedAt)}
+          />
+        </div>
+      </section>
     </div>
   );
 }

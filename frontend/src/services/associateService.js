@@ -9,6 +9,17 @@ const associateService = {
     return getResponseData(await api.get("/associates"));
   },
 
+  async search(query, limit = 5) {
+    const response = await api.get("/associates", {
+      params: {
+        q: query,
+        limit,
+      },
+    });
+
+    return getResponseData(response);
+  },
+
   async getById(id) {
     return getResponseData(await api.get(`/associates/${id}`));
   },

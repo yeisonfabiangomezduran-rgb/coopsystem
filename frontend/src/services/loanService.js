@@ -8,6 +8,16 @@ export async function getLoans() {
   return getResponseData(await api.get("/loans"));
 }
 
+export async function getLoansByAssociateId(associateId) {
+  return getResponseData(
+    await api.get("/loans", {
+      params: {
+        associateId,
+      },
+    })
+  );
+}
+
 export async function getLoanById(id) {
   return getResponseData(await api.get(`/loans/${id}`));
 }

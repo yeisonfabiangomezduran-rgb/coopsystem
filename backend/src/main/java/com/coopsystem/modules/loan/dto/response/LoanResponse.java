@@ -8,6 +8,8 @@ public class LoanResponse {
     private final Long id;
     private final String loanNumber;
     private final Long associateId;
+    private final String associateName;
+    private final String associateCode;
     private final BigDecimal amount;
     private final BigDecimal interestRate;
     private final Integer termMonths;
@@ -19,6 +21,8 @@ public class LoanResponse {
             Long id,
             String loanNumber,
             Long associateId,
+            String associateName,
+            String associateCode,
             BigDecimal amount,
             BigDecimal interestRate,
             Integer termMonths,
@@ -29,6 +33,8 @@ public class LoanResponse {
         this.id = id;
         this.loanNumber = loanNumber;
         this.associateId = associateId;
+        this.associateName = associateName;
+        this.associateCode = associateCode;
         this.amount = amount;
         this.interestRate = interestRate;
         this.termMonths = termMonths;
@@ -36,6 +42,32 @@ public class LoanResponse {
         this.requestedAt = requestedAt;
         this.approvedAt = approvedAt;
     }
+
+    public LoanResponse(
+        Long id,
+        String loanNumber,
+        Long associateId,
+        BigDecimal amount,
+        BigDecimal interestRate,
+        Integer termMonths,
+        String status,
+        LocalDateTime requestedAt,
+        LocalDateTime approvedAt) {
+
+    this(
+        id,
+        loanNumber,
+        associateId,
+        null,
+        null,
+        amount,
+        interestRate,
+        termMonths,
+        status,
+        requestedAt,
+        approvedAt
+    );
+}
 
     public Long getId() {
         return id;
@@ -47,6 +79,14 @@ public class LoanResponse {
 
     public Long getAssociateId() {
         return associateId;
+    }
+
+    public String getAssociateName() {
+        return associateName;
+    }
+
+    public String getAssociateCode() {
+        return associateCode;
     }
 
     public BigDecimal getAmount() {

@@ -7,9 +7,9 @@ export default function Button({
   ...props
 }) {
   const variants = {
-    primary: "bg-blue-600 text-white shadow-sm hover:bg-blue-700 focus-visible:outline-blue-600",
-    secondary: "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-slate-400",
-    ghost: "text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-slate-400",
+    primary: "bg-[#163A63] text-white shadow-sm hover:bg-[#245B8F] focus-visible:outline-[#1769E0]",
+    secondary: "border border-[#b9c9d7] bg-white text-[#163A63] hover:bg-[#EAF2F8] focus-visible:outline-[#1769E0]",
+    ghost: "text-[#536273] hover:bg-[#EAF2F8] hover:text-[#163A63] focus-visible:outline-[#1769E0]",
   };
   const sizes = {
     md: "min-h-10 px-4 text-sm",

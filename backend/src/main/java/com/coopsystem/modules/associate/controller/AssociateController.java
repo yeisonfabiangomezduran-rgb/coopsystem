@@ -35,6 +35,22 @@ public class AssociateController {
         );
     }
 
+    @GetMapping("/search")
+    @Operation(
+            summary = "Buscar asociados",
+            description = "Busca asociados por nombre, apellido, código o documento."
+    )
+    public ApiResponse<List<AssociateResponse>> search(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "5") int limit) {
+
+        return new ApiResponse<>(
+                true,
+                "Resultados de búsqueda",
+                associateService.search(q, limit)
+        );
+    }
+
     @GetMapping("/{id}")
     @Operation(
             summary = "Buscar asociado por ID",

@@ -22,6 +22,9 @@ public class TransactionController {
         this.transactionService = transactionService;
     }
 
+    /**
+     * Obtiene el historial de transacciones de una cuenta.
+     */
     @GetMapping("/account/{savingsAccountId}")
     public ApiResponse<List<TransactionResponse>> findTransactions(
             @PathVariable Long savingsAccountId) {
@@ -32,6 +35,22 @@ public class TransactionController {
         );
     }
 
+    /**
+     * Obtiene las transacciones relacionadas con un préstamo.
+     */
+    @GetMapping("/loan/{loanId}")
+    public ApiResponse<List<TransactionResponse>> findLoanTransactions(
+            @PathVariable Long loanId) {
+
+        return ApiResponse.success(
+                "Historial del préstamo obtenido correctamente",
+                transactionService.findLoanTransactions(loanId)
+        );
+    }
+
+    /**
+     * Registra una consignación.
+     */
     @PostMapping("/deposit/{savingsAccountId}")
     public ApiResponse<DepositResponse> deposit(
             @PathVariable Long savingsAccountId,
@@ -39,10 +58,16 @@ public class TransactionController {
 
         return ApiResponse.success(
                 "Consignación realizada correctamente",
-                transactionService.deposit(savingsAccountId, request)
+                transactionService.deposit(
+                        savingsAccountId,
+                        request
+                )
         );
     }
 
+    /**
+     * Registra un retiro.
+     */
     @PostMapping("/withdraw/{savingsAccountId}")
     public ApiResponse<WithdrawResponse> withdraw(
             @PathVariable Long savingsAccountId,
@@ -50,7 +75,19 @@ public class TransactionController {
 
         return ApiResponse.success(
                 "Retiro realizado correctamente",
-                transactionService.withdraw(savingsAccountId, request)
+                transactionService.withdraw(
+                        savingsAccountId,
+                        request
+                )
         );
     }
+
+    @GetMapping
+public ApiResponse<List<TransactionResponse>> findAllTransactions() {
+
+    return ApiResponse.success(
+            "Historial general obtenido correctamente",
+            transactionService.findAllTransactions()
+    );
+}
 }

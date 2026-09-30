@@ -1,5 +1,6 @@
 package com.coopsystem.modules.savings.repository;
 
+import com.coopsystem.modules.savings.entity.AccountStatus;
 import com.coopsystem.modules.savings.entity.SavingsAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -14,4 +15,5 @@ public interface SavingsAccountRepository
 
     boolean existsByAssociateId(Long associateId);
 
+    long countByStatus(AccountStatus status);
 }

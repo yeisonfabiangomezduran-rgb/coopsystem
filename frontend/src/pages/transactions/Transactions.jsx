@@ -25,6 +25,7 @@ import {
   notifySuccess,
 } from "../../components/ui/toastNotifications";
 
+import api from "../../services/api";
 import associateService from "../../services/associateService";
 import { getSavingsAccounts } from "../../services/savingsService";
 import {
@@ -32,6 +33,7 @@ import {
   getTransactionsByAccount,
   withdraw,
 } from "../../services/transactionService";
+import { getLoans } from "../../services/loanService";
 
 
 // ======================================================
@@ -43,6 +45,7 @@ const transactionLabels = {
   WITHDRAW: "Retiro",
   TRANSFER: "Transferencia",
   LOAN_DISBURSEMENT: "Desembolso de préstamo",
+  LOAN_PAYMENT: "Pago de crédito",
 };
 
 
@@ -98,11 +101,53 @@ function getErrorMessage(error, fallback) {
 
 
 // ======================================================
-// COMPARAR FECHAS
+// FECHA ACTUAL Y COMPARACIÓN DE FECHAS
 // ======================================================
 
+function getTodayLocalDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function isSameDate(value, filter) {
-  return !filter || (value && value.slice(0, 10) === filter);
+  if (!filter) return true;
+  if (!value) return false;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10) === filter;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}` === filter;
+}
+
+function formatSelectedDate(value) {
+  if (!value) return "la fecha seleccionada";
+
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) {
+    return "la fecha seleccionada";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "long",
+  }).format(
+    new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day)
+    )
+  );
 }
 
 
@@ -124,7 +169,7 @@ export default function Transactions() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState(getTodayLocalDate);
   const [typeFilter, setTypeFilter] = useState("Todos");
   const [accountFilter, setAccountFilter] = useState("Todos");
 
@@ -203,8 +248,8 @@ export default function Transactions() {
   // ====================================================
 
   const loadTransactions = useCallback(
-    async (accountsToLoad) => {
-      const histories = await Promise.all(
+    async (accountsToLoad, loansToLoad = []) => {
+      const accountHistories = await Promise.all(
         accountsToLoad.map(async (account) => {
           const history = await getTransactionsByAccount(
             account.id
@@ -213,27 +258,66 @@ export default function Transactions() {
           return (history || []).map(
             (transaction, index) => ({
               ...transaction,
-
               savingsAccountId: account.id,
-
-              accountNumber:
-                account.accountNumber,
-
+              accountNumber: account.accountNumber,
               rowKey:
-                `${account.id}-${transaction.transactionDate}-${transaction.transactionType}-${index}`,
+                `account-${account.id}-${transaction.transactionDate}-${transaction.transactionType}-${index}`,
             })
           );
         })
       );
 
-      setTransactions(
-        histories
-          .flat()
-          .sort(
-            (a, b) =>
-              new Date(b.transactionDate) -
-              new Date(a.transactionDate)
+      const paymentLoans = (loansToLoad || []).filter(
+        (loan) =>
+          ["DISBURSED", "CANCELLED", "PAID"].includes(
+            loan.status
           )
+      );
+
+      const loanHistories = await Promise.all(
+        paymentLoans.map(async (loan) => {
+          try {
+            const response = await api.get(
+              `/transactions/loan/${loan.id}`
+            );
+
+            const history = response.data?.data ?? [];
+
+            return history.map(
+              (transaction, index) => ({
+                ...transaction,
+                loanId: loan.id,
+                loanNumber: loan.loanNumber,
+                associateId: loan.associateId,
+                savingsAccountId: null,
+                accountNumber: loan.loanNumber
+                  ? `Crédito ${loan.loanNumber}`
+                  : "Crédito",
+                previousBalance: null,
+                currentBalance: null,
+                rowKey:
+                  `loan-${loan.id}-${transaction.transactionDate}-${transaction.transactionType}-${index}`,
+              })
+            );
+          } catch (error) {
+            console.error(
+              `No fue posible cargar las transacciones del crédito ${loan.id}:`,
+              error
+            );
+            return [];
+          }
+        })
+      );
+
+      setTransactions(
+        [
+          ...accountHistories.flat(),
+          ...loanHistories.flat(),
+        ].sort(
+          (a, b) =>
+            new Date(b.transactionDate) -
+            new Date(a.transactionDate)
+        )
       );
     },
     []
@@ -248,14 +332,22 @@ export default function Transactions() {
     setIsLoading(true);
 
     try {
-      const [loadedAccounts] = await Promise.all([
+      const [
+        loadedAccounts,
+        loadedAssociates,
+        loadedLoans,
+      ] = await Promise.all([
         loadAccounts(),
-        associateService
-          .getAll()
-          .then(setAssociates),
+        associateService.getAll(),
+        getLoans(),
       ]);
 
-      await loadTransactions(loadedAccounts);
+      setAssociates(loadedAssociates || []);
+
+      await loadTransactions(
+        loadedAccounts,
+        loadedLoans || []
+      );
     } catch (error) {
       console.error(error);
 
@@ -293,13 +385,15 @@ export default function Transactions() {
   const enrichedTransactions = useMemo(
     () =>
       transactions.map((transaction) => {
-        const account = accountById.get(
-          transaction.savingsAccountId
-        );
-
-        const associate = account
-          ? associateById.get(account.associateId)
+        const account = transaction.savingsAccountId
+          ? accountById.get(transaction.savingsAccountId)
           : null;
+
+        const associate = transaction.associateId
+          ? associateById.get(transaction.associateId)
+          : account
+            ? associateById.get(account.associateId)
+            : null;
 
         return {
           ...transaction,
@@ -333,6 +427,10 @@ export default function Transactions() {
             transaction.accountNumber,
             transaction.associateName,
             transaction.transactionType,
+            transactionLabels[
+              transaction.transactionType
+            ],
+            transaction.loanNumber,
           ]
             .filter(Boolean)
             .some((value) =>
@@ -371,37 +469,34 @@ export default function Transactions() {
   // ====================================================
 
   const summaryCards = useMemo(() => {
-    const today = new Date()
-      .toISOString()
-      .slice(0, 10);
-
-    const todayTransactions =
+    const selectedDateTransactions =
       transactions.filter(
         (transaction) =>
           isSameDate(
             transaction.transactionDate,
-            today
+            dateFilter
           )
       );
 
     const income =
-      todayTransactions
+      selectedDateTransactions
         .filter((transaction) =>
           [
             "DEPOSIT",
             "LOAN_DISBURSEMENT",
+            "LOAN_PAYMENT",
           ].includes(
             transaction.transactionType
           )
         )
         .reduce(
           (total, transaction) =>
-            total + Number(transaction.amount),
+            total + Number(transaction.amount || 0),
           0
         );
 
     const expense =
-      todayTransactions
+      selectedDateTransactions
         .filter(
           (transaction) =>
             transaction.transactionType ===
@@ -409,36 +504,35 @@ export default function Transactions() {
         )
         .reduce(
           (total, transaction) =>
-            total + Number(transaction.amount),
+            total + Number(transaction.amount || 0),
           0
         );
 
     return [
       {
-        title: "Total de transacciones",
-        value: String(transactions.length),
-        subtitle: "Movimientos registrados",
+        title: "Transacciones del día",
+        value: String(
+          selectedDateTransactions.length
+        ),
+        subtitle: formatSelectedDate(dateFilter),
         icon: <ReceiptText size={28} />,
-        color:
-          "bg-blue-50 text-blue-600",
+        color: "bg-blue-50 text-blue-600",
       },
 
       {
         title: "Ingresos del día",
         value: formatCurrency(income),
-        subtitle: "Movimientos de hoy",
+        subtitle: formatSelectedDate(dateFilter),
         icon: <ArrowUpRight size={28} />,
-        color:
-          "bg-emerald-50 text-emerald-600",
+        color: "bg-emerald-50 text-emerald-600",
       },
 
       {
         title: "Egresos del día",
         value: formatCurrency(expense),
-        subtitle: "Movimientos de hoy",
+        subtitle: formatSelectedDate(dateFilter),
         icon: <ArrowDownLeft size={28} />,
-        color:
-          "bg-violet-50 text-violet-600",
+        color: "bg-violet-50 text-violet-600",
       },
 
       {
@@ -446,15 +540,14 @@ export default function Transactions() {
         value: formatCurrency(
           income - expense
         ),
-        subtitle: "Resultado de la jornada",
+        subtitle: "Ingresos menos egresos",
         icon: (
           <CircleDollarSign size={28} />
         ),
-        color:
-          "bg-amber-50 text-amber-600",
+        color: "bg-amber-50 text-amber-600",
       },
     ];
-  }, [transactions]);
+  }, [dateFilter, transactions]);
 
 
   // ====================================================
@@ -547,13 +640,19 @@ export default function Transactions() {
 
       setIsModalOpen(false);
 
-      // Actualizar cuentas
-      const refreshedAccounts =
-        await loadAccounts();
+      // Actualizar cuentas y préstamos
+      const [
+        refreshedAccounts,
+        refreshedLoans,
+      ] = await Promise.all([
+        loadAccounts(),
+        getLoans(),
+      ]);
 
       // Actualizar movimientos
       await loadTransactions(
-        refreshedAccounts
+        refreshedAccounts,
+        refreshedLoans || []
       );
 
       // Limpiar formulario
@@ -584,7 +683,7 @@ export default function Transactions() {
 
   function clearFilters() {
     setSearch("");
-    setDateFilter("");
+    setDateFilter(getTodayLocalDate());
     setTypeFilter("Todos");
     setAccountFilter("Todos");
   }
@@ -664,19 +763,21 @@ export default function Transactions() {
 
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-700">
-                Fecha
+                Consultar día
               </span>
 
               <Input
-                aria-label="Filtrar por fecha"
+                aria-label="Seleccionar día para consultar las transacciones"
                 onChange={(event) =>
-                  setDateFilter(
-                    event.target.value
-                  )
+                  setDateFilter(event.target.value)
                 }
                 type="date"
                 value={dateFilter}
               />
+
+              <span className="mt-1.5 block text-xs font-medium text-slate-500">
+                Selecciona en el calendario el día que deseas consultar.
+              </span>
             </label>
 
 
@@ -782,7 +883,7 @@ export default function Transactions() {
 
         <DataSection
           className="overflow-hidden p-0"
-          description={`${filteredTransactions.length} transacciones encontradas.`}
+          description={`${filteredTransactions.length} transacciones encontradas para ${formatSelectedDate(dateFilter)}.`}
           headerClassName="border-b border-slate-200 px-6 py-5"
           title="Historial de movimientos"
         >
@@ -918,16 +1019,20 @@ export default function Transactions() {
 
 
                       <td className="px-6 py-4 text-sm font-semibold text-slate-600">
-                        {formatCurrency(
-                          transaction.previousBalance
-                        )}
+                        {transaction.transactionType === "LOAN_PAYMENT"
+                          ? "—"
+                          : formatCurrency(
+                              transaction.previousBalance
+                            )}
                       </td>
 
 
                       <td className="px-6 py-4 text-sm font-extrabold text-slate-800">
-                        {formatCurrency(
-                          transaction.currentBalance
-                        )}
+                        {transaction.transactionType === "LOAN_PAYMENT"
+                          ? "—"
+                          : formatCurrency(
+                              transaction.currentBalance
+                            )}
                       </td>
 
                     </tr>
