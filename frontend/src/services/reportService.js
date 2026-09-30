@@ -29,13 +29,22 @@ export async function getSavingsReport() {
   return getResponseData(
     await api.get("/reports/savings")
   );
-  }
+}
 
-  /**
+/**
  * Obtiene el reporte real de préstamos.
  */
 export async function getLoansReport() {
   return getResponseData(
     await api.get("/reports/loans")
+  );
+}
+
+/**
+ * Obtiene el reporte real de transacciones.
+ */
+export async function getTransactionsReport() {
+  return getResponseData(
+    await api.get("/reports/transactions")
   );
 }

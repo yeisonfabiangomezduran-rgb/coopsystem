@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.coopsystem.modules.report.dto.AssociateReportResponse;
 import com.coopsystem.modules.report.dto.SavingsReportResponse;
 import com.coopsystem.modules.report.dto.LoanReportResponse;
+import com.coopsystem.modules.report.dto.TransactionReportResponse;
 @RestController
 @RequestMapping("/api/v1/reports")
 public class ReportController {
@@ -54,6 +55,14 @@ public ApiResponse<java.util.List<LoanReportResponse>> getLoansReport() {
     return ApiResponse.success(
             "Reporte de préstamos obtenido correctamente",
             reportService.getLoansReport()
+    );
+}
+
+@GetMapping("/transactions")
+public ApiResponse<java.util.List<TransactionReportResponse>> getTransactionsReport() {
+    return ApiResponse.success(
+            "Reporte de transacciones obtenido correctamente",
+            reportService.getTransactionsReport()
     );
 }
 

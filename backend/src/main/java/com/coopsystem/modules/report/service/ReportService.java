@@ -18,6 +18,7 @@ import com.coopsystem.modules.report.dto.SavingsReportResponse;
 import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.coopsystem.modules.report.dto.TransactionReportResponse;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -246,6 +247,59 @@ public class ReportService {
                 })
                 .toList();
     }
+
+    /**
+ * Obtiene el reporte real de transacciones.
+ */
+@Transactional(readOnly = true)
+public List<TransactionReportResponse> getTransactionsReport() {
+
+    return transactionRepository
+            .findAllByOrderByTransactionDateDesc()
+            .stream()
+            .map(transaction -> {
+
+                String user = "Sistema";
+
+                if (transaction.getSavingsAccount() != null
+                        && transaction.getSavingsAccount().getAssociate() != null) {
+
+                    user =
+                            transaction.getSavingsAccount()
+                                    .getAssociate()
+                                    .getFirstName()
+                            + " "
+                            + transaction.getSavingsAccount()
+                                    .getAssociate()
+                                    .getLastName();
+
+                } else if (transaction.getLoan() != null
+                        && transaction.getLoan().getAssociate() != null) {
+
+                    user =
+                            transaction.getLoan()
+                                    .getAssociate()
+                                    .getFirstName()
+                            + " "
+                            + transaction.getLoan()
+                                    .getAssociate()
+                                    .getLastName();
+                }
+
+                return new TransactionReportResponse(
+                        "TRX-" + transaction.getId(),
+                        transaction.getTransactionType().name(),
+                        transaction.getTransactionDate() != null
+                                ? transaction.getTransactionDate()
+                                        .toLocalDate()
+                                        .toString()
+                                : null,
+                        transaction.getAmount(),
+                        user
+                );
+            })
+            .toList();
+}
 
     /**
      * Convierte valores null de tipo BigDecimal a cero.

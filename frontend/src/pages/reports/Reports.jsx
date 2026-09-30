@@ -27,6 +27,7 @@ import {
   getDashboardReport,
   getLoansReport,
   getSavingsReport,
+  getTransactionsReport,
 } from "../../services/reportService";
 
 const LoanChart = lazy(() => import("../dashboard/LoanChart"));
@@ -426,6 +427,7 @@ export default function Reports() {
   const [associates, setAssociates] = useState([]);
   const [savings, setSavings] = useState([]);
   const [loans, setLoans] = useState([]);
+  const [transactions, setTransactions] = useState([]);
 
   // =========================================================
   // REPORTE DE ASOCIADOS
@@ -551,6 +553,53 @@ export default function Reports() {
   }, [selectedReport]);
 
   // =========================================================
+  // REPORTE DE TRANSACCIONES
+  // =========================================================
+
+  useEffect(() => {
+    async function loadTransactions() {
+      try {
+        const data = await getTransactionsReport();
+
+        console.log(
+          "Transacciones recibidas desde backend:",
+          data
+        );
+
+        const transactionTypeLabels = {
+          DEPOSIT: "Consignación",
+          WITHDRAW: "Retiro",
+          LOAN_DISBURSEMENT: "Desembolso de préstamo",
+          LOAN_PAYMENT: "Pago de préstamo",
+        };
+
+        const formattedTransactions = data.map((item) => ({
+          ...item,
+          type:
+            transactionTypeLabels[item.type] ??
+            item.type,
+          date: item.date,
+          amount: item.amount,
+          user: item.user || "Sistema",
+        }));
+
+        setTransactions(formattedTransactions);
+      } catch (error) {
+        console.error(
+          "Error cargando reporte de transacciones:",
+          error
+        );
+
+        setTransactions([]);
+      }
+    }
+
+    if (selectedReport === "transactions") {
+      loadTransactions();
+    }
+  }, [selectedReport]);
+
+  // =========================================================
   // DASHBOARD
   // =========================================================
 
@@ -609,6 +658,10 @@ export default function Reports() {
       sourceData = loans;
     }
 
+    if (selectedReport === "transactions") {
+      sourceData = transactions;
+    }
+
     return sourceData.filter((item) => {
       const matchesDate =
         (!startDate || item.date >= startDate) &&
@@ -633,6 +686,7 @@ export default function Reports() {
     associates,
     savings,
     loans,
+    transactions,
     associate,
     endDate,
     selectedReport,
@@ -930,7 +984,9 @@ export default function Reports() {
                           ? savings
                           : selectedReport === "loans"
                             ? loans
-                            : reportData[selectedReport]
+                            : selectedReport === "transactions"
+                              ? transactions
+                              : reportData[selectedReport]
                     ).map((item) => item.status)
                   ),
                 ].map((itemStatus) => (
