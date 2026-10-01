@@ -10,6 +10,7 @@ import com.coopsystem.modules.report.dto.AssociateReportResponse;
 import com.coopsystem.modules.report.dto.SavingsReportResponse;
 import com.coopsystem.modules.report.dto.LoanReportResponse;
 import com.coopsystem.modules.report.dto.TransactionReportResponse;
+import com.coopsystem.modules.report.dto.TreasuryReportResponse;
 @RestController
 @RequestMapping("/api/v1/reports")
 public class ReportController {
@@ -63,6 +64,14 @@ public ApiResponse<java.util.List<TransactionReportResponse>> getTransactionsRep
     return ApiResponse.success(
             "Reporte de transacciones obtenido correctamente",
             reportService.getTransactionsReport()
+    );
+}
+
+@GetMapping("/treasury")
+public ApiResponse<java.util.List<TreasuryReportResponse>> getTreasuryReport() {
+    return ApiResponse.success(
+            "Reporte de tesorería obtenido correctamente",
+            reportService.getTreasuryReport()
     );
 }
 

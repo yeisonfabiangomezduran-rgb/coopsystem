@@ -48,3 +48,9 @@ export async function getTransactionsReport() {
     await api.get("/reports/transactions")
   );
 }
+
+export async function getTreasuryReport() {
+  return getResponseData(
+    await api.get("/reports/treasury")
+  );
+}

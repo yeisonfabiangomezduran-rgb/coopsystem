@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import jsPDF from "jspdf";
+import * as XLSX from "xlsx";
 import {
   CreditCard,
   Landmark,
@@ -20,14 +22,13 @@ import PageHeader from "../../components/ui/PageHeader";
 import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
 import ToastProvider from "../../components/ui/ToastProvider";
-import { notifySuccess } from "../../components/ui/toastNotifications";
-
 import {
   getAssociatesReport,
   getDashboardReport,
   getLoansReport,
   getSavingsReport,
   getTransactionsReport,
+  getTreasuryReport,
 } from "../../services/reportService";
 
 const LoanChart = lazy(() => import("../dashboard/LoanChart"));
@@ -428,6 +429,7 @@ export default function Reports() {
   const [savings, setSavings] = useState([]);
   const [loans, setLoans] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [treasury, setTreasury] = useState([]);
 
   // =========================================================
   // REPORTE DE ASOCIADOS
@@ -600,6 +602,54 @@ export default function Reports() {
   }, [selectedReport]);
 
   // =========================================================
+  // REPORTE DE TESORERÍA
+  // =========================================================
+
+  useEffect(() => {
+    async function loadTreasury() {
+      try {
+        const data = await getTreasuryReport();
+
+        console.log(
+          "Tesorería recibida desde backend:",
+          data
+        );
+
+        const treasuryTypeLabels = {
+          "Egreso - Desembolso de préstamo":
+            "Egreso - Desembolso de préstamo",
+          "Ingreso - Pago de préstamo":
+            "Ingreso - Pago de préstamo",
+        };
+
+        const formattedTreasury = data.map((item) => ({
+          ...item,
+          type:
+            treasuryTypeLabels[item.type] ??
+            item.type,
+          date: item.date,
+          amount: item.amount,
+          user: item.user || "Sistema",
+          status: "Completada",
+        }));
+
+        setTreasury(formattedTreasury);
+      } catch (error) {
+        console.error(
+          "Error cargando reporte de tesorería:",
+          error
+        );
+
+        setTreasury([]);
+      }
+    }
+
+    if (selectedReport === "treasury") {
+      loadTreasury();
+    }
+  }, [selectedReport]);
+
+  // =========================================================
   // DASHBOARD
   // =========================================================
 
@@ -662,6 +712,10 @@ export default function Reports() {
       sourceData = transactions;
     }
 
+    if (selectedReport === "treasury") {
+      sourceData = treasury;
+}
+
     return sourceData.filter((item) => {
       const matchesDate =
         (!startDate || item.date >= startDate) &&
@@ -687,6 +741,7 @@ export default function Reports() {
     savings,
     loans,
     transactions,
+    treasury,
     associate,
     endDate,
     selectedReport,
@@ -709,11 +764,173 @@ export default function Reports() {
     setAssociate("Todos");
   }
 
-  function showBackendToast() {
-    notifySuccess(
-      "Esta funcionalidad se conectará al backend en el siguiente paso."
+  function exportReportToPDF() {
+    const doc = new jsPDF({
+      orientation:
+        columns[selectedReport].length > 5
+          ? "landscape"
+          : "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    const usableWidth = pageWidth - margin * 2;
+    const reportColumns = columns[selectedReport];
+    const columnWidth = usableWidth / reportColumns.length;
+
+    const textValue = (item, key) => {
+      const value = item?.[key];
+
+      if (["amount", "pending", "balance"].includes(key)) {
+        return value == null ? "" : formatCurrency(value);
+      }
+
+      if (key === "date") {
+        return value ? formatDate(value) : "";
+      }
+
+      return value == null ? "" : String(value);
+    };
+
+    const drawHeader = () => {
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("CoopSystem", margin, 18);
+
+      doc.setFontSize(12);
+      doc.text(
+        `Reporte de ${selectedCategory.title}`,
+        margin,
+        26
+      );
+
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(
+        `Generado: ${new Date().toLocaleString("es-CO")}`,
+        margin,
+        32
+      );
+
+      doc.text(
+        `Registros: ${results.length}`,
+        pageWidth - margin,
+        32,
+        { align: "right" }
+      );
+
+      let x = margin;
+      const headerY = 42;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+
+      reportColumns.forEach(([label]) => {
+        doc.text(
+          String(label).substring(0, 18),
+          x,
+          headerY
+        );
+        x += columnWidth;
+      });
+
+      doc.line(
+        margin,
+        headerY + 2,
+        pageWidth - margin,
+        headerY + 2
+      );
+    };
+
+    let y = 50;
+    drawHeader();
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+
+    results.forEach((item) => {
+      if (y > pageHeight - 15) {
+        doc.addPage();
+        drawHeader();
+        y = 50;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.5);
+      }
+
+      let x = margin;
+
+      reportColumns.forEach(([, key]) => {
+        const value = textValue(item, key);
+        const lines = doc.splitTextToSize(
+          value,
+          Math.max(columnWidth - 2, 8)
+        );
+
+        doc.text(lines[0] ?? "", x, y);
+        x += columnWidth;
+      });
+
+      y += 7;
+    });
+
+    doc.save(
+      `reporte-${selectedReport}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.pdf`
     );
   }
+
+  function exportReportToExcel() {
+  const reportColumns = columns[selectedReport];
+
+  const excelData = results.map((item) => {
+    const row = {};
+
+    reportColumns.forEach(([label, key]) => {
+      let value = item[key];
+
+      if (["amount", "pending", "balance"].includes(key)) {
+        value = Number(value ?? 0);
+      }
+
+      if (key === "date") {
+        value = item[key] ?? "";
+      }
+
+      if (key === "status") {
+        value = item[key] ?? "";
+      }
+
+      row[label] = value ?? "";
+    });
+
+    return row;
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    selectedCategory.title.substring(0, 31)
+  );
+
+  worksheet["!cols"] = reportColumns.map(([label]) => ({
+    wch: Math.max(label.length + 2, 18),
+  }));
+
+  XLSX.writeFile(
+    workbook,
+    `reporte-${selectedReport}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.xlsx`
+  );
+}
 
   function renderValue(item, key) {
     if (
@@ -743,6 +960,51 @@ export default function Reports() {
 
   return (
     <>
+      <style>{`
+        @media print {
+          @page {
+            margin: 12mm;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          .print-report,
+          .print-report * {
+            visibility: visible !important;
+          }
+
+          .print-report {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+          }
+
+          .print-actions {
+            display: none !important;
+          }
+
+          .print-report table {
+            width: 100% !important;
+            min-width: 0 !important;
+          }
+
+          .print-report [class*="overflow"] {
+            overflow: visible !important;
+          }
+
+          .print-report th,
+          .print-report td {
+            padding: 6px 8px !important;
+            font-size: 10px !important;
+          }
+        }
+      `}</style>
+
       <PageContainer>
 
         {/* =====================================================
@@ -1061,7 +1323,7 @@ export default function Reports() {
 
         <DataSection
           action={
-            <div className="flex flex-wrap gap-2">
+            <div className="print-actions flex flex-wrap gap-2">
 
               <Button
                 onClick={() =>
@@ -1074,7 +1336,7 @@ export default function Reports() {
               </Button>
 
               <Button
-                onClick={showBackendToast}
+                onClick={() => window.print()}
                 size="sm"
                 variant="secondary"
               >
@@ -1083,7 +1345,7 @@ export default function Reports() {
               </Button>
 
               <Button
-                onClick={showBackendToast}
+                onClick={exportReportToPDF}
                 size="sm"
                 variant="secondary"
               >
@@ -1091,7 +1353,7 @@ export default function Reports() {
               </Button>
 
               <Button
-                onClick={showBackendToast}
+                onClick={exportReportToExcel}
                 size="sm"
                 variant="secondary"
               >
@@ -1100,7 +1362,7 @@ export default function Reports() {
 
             </div>
           }
-          className="overflow-hidden p-0"
+          className="print-report overflow-hidden p-0"
           description={`${results.length} registros para ${selectedCategory.title.toLowerCase()}.`}
           headerClassName="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 xl:flex-row xl:items-center xl:justify-between"
           title={`Reporte de ${selectedCategory.title.toLowerCase()}`}

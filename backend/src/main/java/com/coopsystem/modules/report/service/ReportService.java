@@ -19,6 +19,7 @@ import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.coopsystem.modules.report.dto.TransactionReportResponse;
+import com.coopsystem.modules.report.dto.TreasuryReportResponse;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -296,6 +297,66 @@ public List<TransactionReportResponse> getTransactionsReport() {
                                 : null,
                         transaction.getAmount(),
                         user
+                );
+            })
+            .toList();
+}
+
+/**
+ * Obtiene el reporte real de tesorería.
+ *
+ * Incluye el saldo actual de la Caja General y
+ * los movimientos relacionados con préstamos.
+ */
+@Transactional(readOnly = true)
+public List<TreasuryReportResponse> getTreasuryReport() {
+
+    BigDecimal treasuryBalance = treasuryRepository
+            .findByName("Caja General")
+            .map(treasury -> treasury.getBalance())
+            .orElse(BigDecimal.ZERO);
+
+    return transactionRepository
+            .findAllByOrderByTransactionDateDesc()
+            .stream()
+            .filter(transaction ->
+                    transaction.getTransactionType() == TransactionType.LOAN_DISBURSEMENT
+                    || transaction.getTransactionType() == TransactionType.LOAN_PAYMENT
+            )
+            .map(transaction -> {
+
+                String user = "Sistema";
+
+                if (transaction.getLoan() != null
+                        && transaction.getLoan().getAssociate() != null) {
+
+                    user =
+                            transaction.getLoan()
+                                    .getAssociate()
+                                    .getFirstName()
+                            + " "
+                            + transaction.getLoan()
+                                    .getAssociate()
+                                    .getLastName();
+                }
+
+                String type =
+                        transaction.getTransactionType()
+                                == TransactionType.LOAN_DISBURSEMENT
+                                ? "Egreso - Desembolso de préstamo"
+                                : "Ingreso - Pago de préstamo";
+
+                return new TreasuryReportResponse(
+                        "TES-" + transaction.getId(),
+                        type,
+                        transaction.getTransactionDate() != null
+                                ? transaction.getTransactionDate()
+                                        .toLocalDate()
+                                        .toString()
+                                : null,
+                        transaction.getAmount(),
+                        user,
+                        treasuryBalance
                 );
             })
             .toList();
