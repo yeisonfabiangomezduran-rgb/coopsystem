@@ -8,9 +8,6 @@ const navigation = [
   { label: "Préstamos", icon: HandCoins, to: "/prestamos" },
   { label: "Transacciones", icon: ReceiptText, to: "/transacciones" },
   { label: "Reportes", icon: FileChartColumn, to: "/reportes" },
-  { label: "Usuarios", icon: UserRound, to: "/usuarios" },
-  { label: "Configuración", icon: Settings2, to: "/configuracion" },
-  { label: "Tesorería", icon: Landmark, to: "/tesoreria" },
 ];
 
 export default function Sidebar() {

@@ -7,8 +7,8 @@ import com.coopsystem.modules.loan.dto.response.LoanResponse;
 import com.coopsystem.modules.loan.entity.Loan;
 import com.coopsystem.modules.loan.entity.LoanStatus;
 import com.coopsystem.modules.loan.repository.LoanRepository;
+import com.coopsystem.modules.savingsfund.service.SavingsFundMonthlyService;
 import com.coopsystem.modules.transaction.service.TransactionService;
-import com.coopsystem.modules.treasury.service.TreasuryService;
 import com.coopsystem.shared.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,21 +22,21 @@ public class LoanService {
     private final LoanRepository loanRepository;
     private final AssociateRepository associateRepository;
     private final TransactionService transactionService;
-    private final TreasuryService treasuryService;
     private final LoanInstallmentService loanInstallmentService;
+    private final SavingsFundMonthlyService savingsFundMonthlyService;
 
     public LoanService(
             LoanRepository loanRepository,
             AssociateRepository associateRepository,
             TransactionService transactionService,
-            TreasuryService treasuryService,
-            LoanInstallmentService loanInstallmentService) {
+            LoanInstallmentService loanInstallmentService,
+            SavingsFundMonthlyService savingsFundMonthlyService) {
 
         this.loanRepository = loanRepository;
         this.associateRepository = associateRepository;
         this.transactionService = transactionService;
-        this.treasuryService = treasuryService;
         this.loanInstallmentService = loanInstallmentService;
+        this.savingsFundMonthlyService = savingsFundMonthlyService;
     }
 
     @Transactional(readOnly = true)
@@ -139,16 +139,15 @@ public class LoanService {
                     "Solo se pueden desembolsar préstamos aprobados");
         }
 
-        // Retira el dinero de la Caja General
-        treasuryService.withdrawLoan(
+        // Verifica y descuenta directamente del Fondo de Préstamos
+        savingsFundMonthlyService.registerLoanDisbursement(
                 loan.getAmount());
 
         // Consigna el dinero en la cuenta de ahorro del asociado
         transactionService.depositLoan(
-        loan.getAssociate().getId(),
-        loan.getAmount(),
-        loan
-);
+                loan.getAssociate().getId(),
+                loan.getAmount(),
+                loan);
 
         // Cambia el estado del préstamo
         loan.setStatus(LoanStatus.DISBURSED);

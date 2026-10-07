@@ -1,13 +1,14 @@
 package com.coopsystem.modules.loan.service;
 
+import com.coopsystem.modules.associate.entity.Associate;
 import com.coopsystem.modules.associate.repository.AssociateRepository;
 import com.coopsystem.modules.loan.dto.request.CreateLoanRequest;
 import com.coopsystem.modules.loan.dto.response.LoanResponse;
 import com.coopsystem.modules.loan.entity.Loan;
 import com.coopsystem.modules.loan.entity.LoanStatus;
 import com.coopsystem.modules.loan.repository.LoanRepository;
+import com.coopsystem.modules.savingsfund.service.SavingsFundMonthlyService;
 import com.coopsystem.modules.transaction.service.TransactionService;
-import com.coopsystem.modules.treasury.service.TreasuryService;
 import com.coopsystem.shared.exception.BusinessException;
 import com.coopsystem.testdata.AssociateTestData;
 import com.coopsystem.testdata.LoanTestData;
@@ -38,10 +39,10 @@ class LoanServiceTest {
     private TransactionService transactionService;
 
     @Mock
-    private TreasuryService treasuryService;
+    private LoanInstallmentService loanInstallmentService;
 
     @Mock
-    private LoanInstallmentService loanInstallmentService;
+    private SavingsFundMonthlyService savingsFundMonthlyService;
 
     @InjectMocks
     private LoanService loanService;
@@ -50,6 +51,7 @@ class LoanServiceTest {
     void shouldCreateLoanSuccessfully() {
 
         CreateLoanRequest request = new CreateLoanRequest();
+
         request.setAssociateId(TestConstants.ASSOCIATE_ID);
         request.setAmount(TestConstants.LOAN_AMOUNT);
         request.setInterestRate(TestConstants.INTEREST_RATE);
@@ -89,14 +91,16 @@ class LoanServiceTest {
         assertEquals(TestConstants.TERM_MONTHS, loan.getTermMonths());
         assertEquals(LoanStatus.PENDING, loan.getStatus());
 
-        verify(associateRepository).findById(TestConstants.ASSOCIATE_ID);
+        verify(associateRepository)
+                .findById(TestConstants.ASSOCIATE_ID);
+
         verify(loanRepository).count();
         verify(loanRepository).save(any(Loan.class));
 
         verifyNoInteractions(
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -104,6 +108,7 @@ class LoanServiceTest {
     void shouldThrowExceptionWhenAssociateDoesNotExist() {
 
         CreateLoanRequest request = new CreateLoanRequest();
+
         request.setAssociateId(TestConstants.ASSOCIATE_ID);
         request.setAmount(TestConstants.LOAN_AMOUNT);
         request.setInterestRate(TestConstants.INTEREST_RATE);
@@ -127,12 +132,12 @@ class LoanServiceTest {
         verifyNoInteractions(
                 loanRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
-        @Test
+    @Test
     void shouldFindLoanByIdSuccessfully() {
 
         Loan loan = LoanTestData.pendingLoan();
@@ -149,13 +154,14 @@ class LoanServiceTest {
         assertEquals(TestConstants.ASSOCIATE_ID, response.getAssociateId());
         assertEquals(TestConstants.LOAN_AMOUNT, response.getAmount());
 
-        verify(loanRepository).findById(TestConstants.LOAN_ID);
+        verify(loanRepository)
+                .findById(TestConstants.LOAN_ID);
 
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -191,6 +197,7 @@ class LoanServiceTest {
                         TestConstants.LOAN_NUMBER);
 
         assertNotNull(response);
+
         assertEquals(
                 TestConstants.LOAN_NUMBER,
                 response.getLoanNumber());
@@ -201,8 +208,8 @@ class LoanServiceTest {
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -257,8 +264,8 @@ class LoanServiceTest {
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -279,12 +286,12 @@ class LoanServiceTest {
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
-        @Test
+    @Test
     void shouldApproveLoanSuccessfully() {
 
         Loan loan = LoanTestData.pendingLoan();
@@ -299,6 +306,7 @@ class LoanServiceTest {
                 loanService.approve(TestConstants.LOAN_ID);
 
         assertNotNull(response);
+
         assertEquals(
                 LoanStatus.APPROVED.name(),
                 response.getStatus());
@@ -325,8 +333,8 @@ class LoanServiceTest {
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -369,6 +377,7 @@ class LoanServiceTest {
                 loanService.reject(TestConstants.LOAN_ID);
 
         assertNotNull(response);
+
         assertEquals(
                 LoanStatus.REJECTED.name(),
                 response.getStatus());
@@ -390,8 +399,8 @@ class LoanServiceTest {
         verifyNoInteractions(
                 associateRepository,
                 transactionService,
-                treasuryService,
-                loanInstallmentService
+                loanInstallmentService,
+                savingsFundMonthlyService
         );
     }
 
@@ -457,7 +466,7 @@ class LoanServiceTest {
                 .findById(TestConstants.LOAN_ID);
     }
 
-        @Test
+    @Test
     void shouldDisburseLoanSuccessfully() {
 
         Loan loan = LoanTestData.approvedLoan();
@@ -477,22 +486,29 @@ class LoanServiceTest {
                 LoanStatus.DISBURSED.name(),
                 response.getStatus());
 
-        verify(treasuryService)
-                .withdrawLoan(TestConstants.LOAN_AMOUNT);
+        verify(savingsFundMonthlyService)
+                .registerLoanDisbursement(
+                        TestConstants.LOAN_AMOUNT);
 
         verify(transactionService)
                 .depositLoan(
                         TestConstants.ASSOCIATE_ID,
-                        TestConstants.LOAN_AMOUNT, loan);
+                        TestConstants.LOAN_AMOUNT,
+                        loan);
 
         verify(loanInstallmentService)
-                .generateSchedule(TestConstants.LOAN_ID);
+                .generateSchedule(
+                        TestConstants.LOAN_ID);
 
         verify(loanRepository)
                 .findById(TestConstants.LOAN_ID);
 
         verify(loanRepository)
                 .save(any(Loan.class));
+
+        verifyNoInteractions(
+                associateRepository
+        );
     }
 
     @Test
@@ -516,9 +532,10 @@ class LoanServiceTest {
                 .findById(TestConstants.LOAN_ID);
 
         verifyNoInteractions(
-                treasuryService,
+                savingsFundMonthlyService,
                 transactionService,
-                loanInstallmentService);
+                loanInstallmentService
+        );
 
         verify(loanRepository, never())
                 .save(any());
@@ -543,10 +560,9 @@ class LoanServiceTest {
                 .findById(TestConstants.LOAN_ID);
 
         verifyNoInteractions(
-                treasuryService,
+                savingsFundMonthlyService,
                 transactionService,
-                loanInstallmentService);
+                loanInstallmentService
+        );
     }
-
 }
-

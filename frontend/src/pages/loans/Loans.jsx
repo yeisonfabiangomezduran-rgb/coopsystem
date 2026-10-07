@@ -1520,6 +1520,7 @@ function LoanResult({
               <Button
                 onClick={() => onAction("reject")}
                 variant="ghost"
+                className="border border-[#D92D20] text-[#D92D20] hover:bg-[#FEF3F2] hover:text-[#B42318]"
               >
                 Rechazar crédito
               </Button>

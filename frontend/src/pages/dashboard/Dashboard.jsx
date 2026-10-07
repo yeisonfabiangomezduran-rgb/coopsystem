@@ -1,40 +1,37 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, CircleAlert, Clock3, FileWarning, HandCoins, Landmark, ReceiptText, TrendingUp, Users, WalletCards } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
 import Button from "../../components/ui/Button";
-import Card from "../../components/ui/Card";
 import DataSection from "../../components/ui/DataSection";
 import Loader from "../../components/ui/Loader";
 import Modal from "../../components/ui/Modal";
 import PageContainer from "../../components/ui/PageContainer";
 import PageHeader from "../../components/ui/PageHeader";
-import SummaryCards from "../../components/ui/SummaryCards";
 import Table from "../../components/ui/Table";
-import { getDashboardReport } from "../../services/reportService";
 
-const LoanChart = lazy(() => import("./LoanChart"));
-const recentActivity = [
-  { id: "ASO-0019", associate: "Edgar Peñalosa Hernández", action: "Apertura de cuenta de ahorros", amount: "$ 500.000", date: "02 may. 2026", status: "Completado" },
-  { id: "PRE-0020", associate: "María Camila Ulloa", action: "Solicitud de préstamo", amount: "$ 8.000.000", date: "30 abr. 2026", status: "En revisión" },
-  { id: "AHO-0021", associate: "José Manuel Veltrán", action: "Consignación de ahorros", amount: "$ 1.250.000", date: "02 may. 2026", status: "Completado" },
-];
-const pendingItems = [
-  { title: "Préstamos pendientes", description: "15 solicitudes de crédito están en revisión.", count: 15, route: "/prestamos" },
-  { title: "Asociados pendientes", description: "4 registros requieren completar su información.", count: 4, route: "/asociados" },
-  { title: "Cajas pendientes", description: "1 caja requiere arqueo y cierre de jornada.", count: 1, route: "/tesoreria" },
-  { title: "Solicitudes pendientes", description: "8 solicitudes esperan una decisión de gestión.", count: 8, route: "/prestamos" },
-];
-
-const systemMovements = [
-  { id: "TRX-0031", date: "2026-07-21T10:24:00", type: "Consignación", associate: "José Manuel Veltrán", amount: "$ 500.000", status: "Completado" },
-  { id: "TRX-0030", date: "2026-07-21T09:48:00", type: "Desembolso", associate: "María Camila Ulloa", amount: "$ 8.000.000", status: "Pendiente" },
-  { id: "TRX-0029", date: "2026-07-20T16:16:00", type: "Retiro", associate: "Liliana Rodríguez Mora", amount: "$ 275.000", status: "Completado" },
-  { id: "TRX-0028", date: "2026-07-20T11:02:00", type: "Pago", associate: "Edgar Peñalosa Hernández", amount: "$ 850.000", status: "Completado" },
-  { id: "TRX-0027", date: "2026-07-19T15:35:00", type: "Ajuste", associate: "Comercializadora Andina S.A.S.", amount: "$ 125.000", status: "Completado" },
-].sort((first, second) => new Date(second.date) - new Date(first.date));
+import {
+  getDashboardReport,
+  getTransactionsReport,
+} from "../../services/reportService";
 
 function formatMovementDate(value) {
-  return new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)).replace(/\./g, "");
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+    .format(date)
+    .replace(/\./g, "");
 }
 
 function formatCurrency(value) {
@@ -42,15 +39,21 @@ function formatCurrency(value) {
     style: "currency",
     currency: "COP",
     maximumFractionDigits: 0,
-  }).format(Number(value || 0)).replace("COP", "$ ");
+  })
+    .format(Number(value || 0))
+    .replace("COP", "$ ");
 }
 
 export default function Dashboard() {
   const [activeModal, setActiveModal] = useState(null);
   const [dashboard, setDashboard] = useState(null);
+  const [transactions, setTransactions] = useState([]);
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [isTransactionsLoading, setIsTransactionsLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState(false);
+  const [transactionsError, setTransactionsError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -58,30 +61,72 @@ export default function Dashboard() {
 
     async function loadDashboard() {
       try {
+        setIsDashboardLoading(true);
+        setDashboardError(false);
+
         const report = await getDashboardReport();
-        if (isCurrent) setDashboard(report);
-      } catch {
-        if (isCurrent) setDashboardError(true);
+
+        if (isCurrent) {
+          setDashboard(report);
+        }
+      } catch (error) {
+        console.error("Error cargando dashboard:", error);
+
+        if (isCurrent) {
+          setDashboardError(true);
+        }
       } finally {
-        if (isCurrent) setIsDashboardLoading(false);
+        if (isCurrent) {
+          setIsDashboardLoading(false);
+        }
+      }
+    }
+
+    async function loadTransactions() {
+      try {
+        setIsTransactionsLoading(true);
+        setTransactionsError(false);
+
+        const data = await getTransactionsReport();
+
+        if (isCurrent) {
+          const orderedTransactions = [...(data ?? [])].sort(
+            (first, second) =>
+              new Date(second.date).getTime() -
+              new Date(first.date).getTime()
+          );
+
+          setTransactions(orderedTransactions);
+        }
+      } catch (error) {
+        console.error("Error cargando transacciones del dashboard:", error);
+
+        if (isCurrent) {
+          setTransactionsError(true);
+          setTransactions([]);
+        }
+      } finally {
+        if (isCurrent) {
+          setIsTransactionsLoading(false);
+        }
       }
     }
 
     void loadDashboard();
-    return () => { isCurrent = false; };
+    void loadTransactions();
+
+    return () => {
+      isCurrent = false;
+    };
   }, [reloadKey]);
 
-  const summaryCards = dashboard ? [
-    { title: "Asociados", value: dashboard.totalAssociates, subtitle: "Asociados registrados", icon: <Users size={23} />, color: "bg-[#EAF2F8] text-[#163A63]" },
-    { title: "Cuentas de ahorro", value: dashboard.activeSavingsAccounts, subtitle: "Cuentas activas", icon: <WalletCards size={23} />, color: "bg-[#EAF2F8] text-[#245B8F]" },
-    { title: "Préstamos vigentes", value: dashboard.activeLoans, subtitle: "Créditos desembolsados", icon: <HandCoins size={23} />, color: "bg-[#EAF2F8] text-[#163A63]" },
-    { title: "Transacciones", value: dashboard.totalTransactions, subtitle: "Operaciones registradas", icon: <ReceiptText size={23} />, color: "bg-[#EAF2F8] text-[#245B8F]" },
-    { title: "Caja disponible", value: formatCurrency(dashboard.treasuryBalance), subtitle: "Saldo de Caja General", icon: <Landmark size={23} />, color: "bg-[#E8F7F0] text-[#16805C]" },
-  ] : [];
+  const recentTransactions = transactions.slice(0, 5);
 
   function retryDashboard() {
     setIsDashboardLoading(true);
+    setIsTransactionsLoading(true);
     setDashboardError(false);
+    setTransactionsError(false);
     setReloadKey((current) => current + 1);
   }
 
@@ -92,37 +137,288 @@ export default function Dashboard() {
 
   return (
     <>
-    <PageContainer>
-      <PageHeader aside={<p className="rounded-lg border border-[#dce5ed] bg-white px-3 py-2 text-sm font-medium text-[#536273]">Actualizado hoy, 10:30 a. m.</p>} eyebrow="Resumen institucional" subtitle="Información consolidada de los principales indicadores operativos y financieros." title="Resumen institucional" />
-      {isDashboardLoading ? <Card><Loader label="Cargando indicadores institucionales..." /></Card> : dashboardError ? <Card className="text-center"><p className="text-base font-bold text-[#1B2A41]">No fue posible cargar los indicadores.</p><Button className="mt-4" onClick={retryDashboard} variant="secondary">Reintentar</Button></Card> : <SummaryCards items={summaryCards} />}
-      <section className="grid gap-5 xl:grid-cols-3">
-        <DataSection className="p-6 xl:col-span-2" description="Evolución de solicitudes y comportamiento de la cartera durante los últimos seis meses." headerClassName="flex items-start justify-between gap-4" title="Gestión de cartera" titleClassName="text-lg font-extrabold tracking-tight text-[#1B2A41]" action={<div className="flex items-center gap-1.5 rounded-lg bg-[#E8F7F0] px-3 py-1.5 text-sm font-bold text-[#16805C]"><TrendingUp size={16} /> +36%</div>}><div className="mt-5"><Suspense fallback={<Loader label="Cargando evolución..." />}><LoanChart /></Suspense></div></DataSection>
-        <Card className="p-6">
-          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-extrabold tracking-tight text-[#1B2A41]">Pendientes de gestión</h2><p className="mt-1 text-sm font-medium text-[#536273]">Tareas y procesos que requieren atención.</p></div><div className="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-[#D97706]"><CircleAlert size={21} /></div></div>
-          <div className="mt-5 divide-y divide-[#e6edf2]"><div className="flex items-center gap-3 py-3 pt-0"><FileWarning className="text-[#D97706]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Solicitudes por revisar</p><span className="text-lg font-extrabold text-[#1B2A41]">15</span><ArrowRight className="text-[#536273]" size={16} /></div><div className="flex items-center gap-3 py-3"><HandCoins className="text-[#245B8F]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Cuotas próximas a vencer</p><span className="text-lg font-extrabold text-[#1B2A41]">8</span><ArrowRight className="text-[#536273]" size={16} /></div><div className="flex items-center gap-3 py-3 pb-0"><Users className="text-[#245B8F]" size={17} /><p className="flex-1 text-sm font-semibold text-[#536273]">Documentos pendientes</p><span className="text-lg font-extrabold text-[#1B2A41]">4</span><ArrowRight className="text-[#536273]" size={16} /></div></div>
-          <button className="mt-6 inline-flex items-center gap-1.5 text-sm font-bold text-[#245B8F] transition hover:text-[#163A63]" onClick={() => setActiveModal("pending")} type="button">Gestionar pendientes <ArrowRight size={16} /></button>
-        </Card>
-      </section>
-      <DataSection className="overflow-hidden p-0" description="Últimos movimientos registrados en el sistema." title="Actividad reciente" action={<button className="inline-flex items-center gap-1.5 text-left text-sm font-bold text-blue-600 transition hover:text-blue-700" onClick={() => setActiveModal("movements")} type="button">Ver movimientos <ArrowRight size={16} /></button>}>
-        <Table className="min-w-225"><thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-6 py-5">ID</th><th className="px-6 py-5">Asociado</th><th className="px-6 py-5">Movimiento</th><th className="px-6 py-5">Valor</th><th className="px-6 py-5">Estado</th><th className="px-6 py-5">Fecha</th></tr></thead><tbody className="divide-y divide-slate-200">{recentActivity.map((item) => { const completed = item.status === "Completado"; return <tr className="transition hover:bg-slate-50/70" key={item.id}><td className="px-6 py-5 text-sm font-extrabold text-slate-800">{item.id}</td><td className="px-6 py-5 text-sm font-bold text-slate-800">{item.associate}</td><td className="px-6 py-5 text-sm font-semibold text-slate-600">{item.action}</td><td className="px-6 py-5 text-sm font-extrabold text-slate-800">{item.amount}</td><td className="px-6 py-5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold ${completed ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200" : "bg-amber-100 text-amber-700 ring-1 ring-amber-200"}`}>{completed ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}{item.status}</span></td><td className="px-6 py-5 text-sm font-semibold text-slate-600">{item.date}</td></tr>; })}</tbody></Table>
-      </DataSection>
-    </PageContainer>
-    <Modal isOpen={activeModal === "pending"} onClose={() => setActiveModal(null)} size="lg" title="Gestionar pendientes">
-      <p className="text-sm font-medium text-slate-500">Revisa las tareas operativas pendientes y continúa en el módulo correspondiente.</p>
-      <div className="mt-5 divide-y divide-slate-200 rounded-xl border border-slate-200">
-        {pendingItems.map((item) => <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between" key={item.title}>
-          <div className="flex items-start gap-3"><span className="grid h-10 min-w-10 place-items-center rounded-xl bg-amber-50 text-sm font-extrabold text-amber-700">{item.count}</span><div><h4 className="font-extrabold text-slate-900">{item.title}</h4><p className="mt-1 text-sm font-medium text-slate-500">{item.description}</p></div></div>
-          <Button onClick={() => goTo(item.route)} size="sm" variant="secondary">Ir <ArrowRight size={16} /></Button>
-        </div>)}
+      <PageContainer>
+        <PageHeader
+          aside={
+            <p className="rounded-lg border border-[#dce5ed] bg-white px-3 py-2 text-sm font-medium text-[#536273]">
+              Información en tiempo real
+            </p>
+          }
+          eyebrow="Resumen institucional"
+          subtitle="Información consolidada de los principales indicadores operativos y financieros."
+          title="Resumen institucional"
+        />
+
+        {isDashboardLoading ? (
+          <div className="py-8">
+            <Loader label="Cargando indicadores institucionales..." />
+          </div>
+        ) : dashboardError ? (
+          <div className="py-8 text-center">
+            <p className="text-base font-bold text-[#1B2A41]">
+              No fue posible cargar los indicadores.
+            </p>
+
+            <Button
+              className="mt-4"
+              onClick={retryDashboard}
+              variant="secondary"
+            >
+              Reintentar
+            </Button>
+          </div>
+        ) : null}
+
+        <section className="mt-8">
+  <DataSection
+    title="Estado operativo"
+    description="Resumen actual de las principales operaciones de la cooperativa."
+  >
+    <div className="mt-8 grid grid-cols-1 divide-y divide-[#dce5ed] md:grid-cols-3 md:divide-x md:divide-y-0">
+      
+      {/* Préstamos */}
+      <div className="px-1 py-2 md:px-8 md:first:pl-0">
+        <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#718096]">
+          Préstamos vigentes
+        </p>
+
+        <p className="mt-3 text-5xl font-extrabold tracking-tight text-[#1B2A41]">
+          {dashboard?.activeLoans ?? 0}
+        </p>
+
+        <p className="mt-2 text-sm font-medium leading-6 text-[#536273]">
+          Créditos desembolsados actualmente registrados en el sistema.
+        </p>
+
+        <div className="mt-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[#718096]">
+          <span className="h-2 w-2 rounded-full bg-[#718096]" />
+          Estado actual
+        </div>
       </div>
-    </Modal>
-    <Modal isOpen={activeModal === "movements"} onClose={() => setActiveModal(null)} size="lg" title="Últimos movimientos del sistema">
-      <p className="text-sm font-medium text-slate-500">Movimientos simulados ordenados del más reciente al más antiguo.</p>
-      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-        <Table className="min-w-[760px]"><thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Asociado</th><th className="px-4 py-3">Valor</th><th className="px-4 py-3">Estado</th></tr></thead><tbody className="divide-y divide-slate-200">{systemMovements.map((movement) => <tr className="transition hover:bg-slate-50/70" key={movement.id}><td className="px-4 py-4 text-sm font-semibold text-slate-600">{formatMovementDate(movement.date)}</td><td className="px-4 py-4 text-sm font-extrabold text-slate-800">{movement.type}</td><td className="px-4 py-4 text-sm font-semibold text-slate-600">{movement.associate}</td><td className="px-4 py-4 text-sm font-extrabold text-slate-800">{movement.amount}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${movement.status === "Completado" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-amber-50 text-amber-700 ring-amber-200"}`}>{movement.status}</span></td></tr>)}</tbody></Table>
+
+      {/* Ahorros */}
+      <div className="px-1 py-6 md:px-8 md:py-2">
+        <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#718096]">
+          Cuentas de ahorro activas
+        </p>
+
+        <p className="mt-3 text-5xl font-extrabold tracking-tight text-[#16805C]">
+          {dashboard?.activeSavingsAccounts ?? 0}
+        </p>
+
+        <p className="mt-2 text-sm font-medium leading-6 text-[#536273]">
+          Productos de ahorro registrados actualmente como activos.
+        </p>
+
+        <div className="mt-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[#16805C]">
+          <span className="h-2 w-2 rounded-full bg-[#16805C]" />
+          Productos activos
+        </div>
       </div>
-      <div className="mt-5 flex justify-end"><Button onClick={() => goTo("/transacciones")}>Ir a Transacciones <ArrowRight size={17} /></Button></div>
-    </Modal>
+
+      {/* Transacciones */}
+      <div className="px-1 py-6 md:px-8 md:py-2 md:last:pr-0">
+        <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#718096]">
+          Transacciones registradas
+        </p>
+
+        <p className="mt-3 text-5xl font-extrabold tracking-tight text-[#1B2A41]">
+          {dashboard?.totalTransactions ?? 0}
+        </p>
+
+        <p className="mt-2 text-sm font-medium leading-6 text-[#536273]">
+          Operaciones financieras registradas en el sistema.
+        </p>
+
+        <div className="mt-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[#1B2A41]">
+          <span className="h-2 w-2 rounded-full bg-[#1B2A41]" />
+          Movimientos registrados
+        </div>
+      </div>
+    </div>
+
+    {/* Acciones */}
+    <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-[#dce5ed] pt-6">
+      <div>
+        <p className="text-sm font-bold text-[#1B2A41]">
+          Consulta la operación que necesites
+        </p>
+
+        <p className="mt-1 text-xs font-medium text-[#718096]">
+          Accede directamente a préstamos y movimientos financieros.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Button
+          onClick={() => goTo("/prestamos")}
+          variant="secondary"
+        >
+          Ver préstamos
+          <ArrowRight size={16} />
+        </Button>
+
+        <Button
+          onClick={() => goTo("/transacciones")}
+          variant="secondary"
+        >
+          Ver transacciones
+          <ArrowRight size={16} />
+        </Button>
+      </div>
+    </div>
+  </DataSection>
+</section>
+
+        <DataSection
+          className="overflow-hidden p-0"
+          description="Últimas transacciones reales registradas en el sistema."
+          title="Actividad reciente"
+          action={
+            <button
+              className="inline-flex items-center gap-1.5 text-left text-sm font-bold text-blue-600 transition hover:text-blue-700"
+              onClick={() => setActiveModal("movements")}
+              type="button"
+            >
+              Ver movimientos
+              <ArrowRight size={16} />
+            </button>
+          }
+        >
+          {isTransactionsLoading ? (
+            <div className="p-6">
+              <Loader label="Cargando transacciones..." />
+            </div>
+          ) : transactionsError ? (
+            <div className="p-6 text-center">
+              <p className="text-sm font-bold text-[#1B2A41]">
+                No fue posible cargar las transacciones.
+              </p>
+              <Button
+                className="mt-4"
+                onClick={retryDashboard}
+                size="sm"
+                variant="secondary"
+              >
+                Reintentar
+              </Button>
+            </div>
+          ) : recentTransactions.length === 0 ? (
+            <div className="p-8 text-center text-sm font-medium text-[#536273]">
+              No hay transacciones registradas.
+            </div>
+          ) : (
+            <Table className="min-w-[900px]">
+              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-6 py-5">Número</th>
+                  <th className="px-6 py-5">Movimiento</th>
+                  <th className="px-6 py-5">Valor</th>
+                  <th className="px-6 py-5">Usuario</th>
+                  <th className="px-6 py-5">Fecha</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {recentTransactions.map((item) => (
+                  <tr
+                    className="transition hover:bg-slate-50/70"
+                    key={`${item.number}-${item.date}`}
+                  >
+                    <td className="px-6 py-5 text-sm font-extrabold text-slate-800">
+                      {item.number || "—"}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-semibold text-slate-600">
+                      {item.type || "—"}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-extrabold text-slate-800">
+                      {formatCurrency(item.amount)}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-semibold text-slate-600">
+                      {item.user || "Sistema"}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-semibold text-slate-600">
+                      {formatMovementDate(item.date)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </DataSection>
+      </PageContainer>
+
+      <Modal
+        isOpen={activeModal === "movements"}
+        onClose={() => setActiveModal(null)}
+        size="lg"
+        title="Últimos movimientos del sistema"
+      >
+        <p className="text-sm font-medium text-slate-500">
+          Transacciones reales registradas en el sistema, ordenadas de la más
+          reciente a la más antigua.
+        </p>
+
+        <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-sm font-medium text-slate-500">
+              No hay transacciones registradas.
+            </div>
+          ) : (
+            <Table className="min-w-[760px]">
+              <thead className="bg-slate-50 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Fecha</th>
+                  <th className="px-4 py-3">Número</th>
+                  <th className="px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Valor</th>
+                  <th className="px-4 py-3">Usuario</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {transactions.map((movement) => (
+                  <tr
+                    className="transition hover:bg-slate-50/70"
+                    key={`${movement.number}-${movement.date}`}
+                  >
+                    <td className="px-4 py-4 text-sm font-semibold text-slate-600">
+                      {formatMovementDate(movement.date)}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm font-extrabold text-slate-800">
+                      {movement.number || "—"}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm font-extrabold text-slate-800">
+                      {movement.type || "—"}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm font-extrabold text-slate-800">
+                      {formatCurrency(movement.amount)}
+                    </td>
+
+                    <td className="px-4 py-4 text-sm font-semibold text-slate-600">
+                      {movement.user || "Sistema"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <Button onClick={() => goTo("/transacciones")}>
+            Ir a Transacciones
+            <ArrowRight size={17} />
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 }
